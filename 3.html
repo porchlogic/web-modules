@@ -38,6 +38,13 @@
       <button id="snapTo" title="Move master to nearest snapshot">Snap to nearest</button>
       <button id="clearKF" title="Remove all snapshots">Clear</button>
     </div>
+    <div style="margin-top:8px;font-size:12px;color:#9fb3c8;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input id="manualMorph" type="checkbox">
+        Manual control
+      </label>
+      <span class="muted" style="margin:0;">Release speed control to move the master slider manually.</span>
+    </div>
     <div class="kf"><small>Snapshots:</small><span id="kfList" class="muted">none</span></div>
     <div class="muted">Create a few sonic snapshots, then move to drive them with real-world speed.</div>
   </div>
@@ -141,6 +148,13 @@
     L.scrollTop = L.scrollHeight;
   };
   const setStatus = t => { $('status').textContent = t; };
+
+  const morphSlider = $('morph');
+  const manualToggle = $('manualMorph');
+  let manualMode = false;
+  let morphTarget = +morphSlider.value;
+  let morphSmooth = morphTarget;
+  morphSlider.disabled = true;
 
   // ===== AUDIO CORE (from 2.html) =====
   let ctx, started=false;
@@ -344,8 +358,10 @@
     if(idx>=0) snapshots[idx]={pos,p}; else { snapshots.push({pos,p}); snapshots.sort((a,b)=>a.pos-b.pos); }
     updateSnapshotListUI();
   }
-  function applyMaster(x){
-    $('morph').value=x;
+  function applyMaster(x, {updateSlider=true}={}){
+    if(updateSlider){
+      morphSlider.value = x;
+    }
     if(snapshots.length===0) return;
     const [a,b,t]=findNeighbors(x);
     if(!a||!b) return;
@@ -355,13 +371,28 @@
 
   $('startAudio').addEventListener('click', startAudio);
   $('stopAudio').addEventListener('click', stopAudio);
+  morphSlider.addEventListener('input', ()=>{
+    if(manualMode){
+      applyMaster(+morphSlider.value, {updateSlider:false});
+    }
+  });
+  manualToggle.addEventListener('change', e=>{
+    manualMode = e.target.checked;
+    morphSlider.disabled = !manualMode;
+    if(manualMode){
+      log('Manual morph control enabled');
+    } else {
+      log('Manual morph control disabled — speed control active');
+      applyMaster(morphSmooth);
+    }
+  });
   PARAM_IDS.forEach(id=>{ $(id).addEventListener('input', ()=>{ if(!updatingUI) applyParams(); }); });
   $('vowel').addEventListener('input', ()=>{ if(started) applyVowel(+$('vowel').value); });
-  $('saveKF').addEventListener('click', ()=> saveSnapshotAt(+$('morph').value));
+  $('saveKF').addEventListener('click', ()=> saveSnapshotAt(+morphSlider.value));
   $('clearKF').addEventListener('click', ()=>{ snapshots=[]; updateSnapshotListUI(); });
   $('snapTo').addEventListener('click', ()=>{
     if(!snapshots.length) return;
-    const x=+$('morph').value; let nearest=snapshots[0], best=Math.abs(x-nearest.pos);
+    const x=+morphSlider.value; let nearest=snapshots[0], best=Math.abs(x-nearest.pos);
     for(const s of snapshots){ const d=Math.abs(x-s.pos); if(d<best){ best=d; nearest=s; } }
     applyMaster(nearest.pos);
   });
@@ -477,8 +508,18 @@
       if (gpsSpeed!=null){ const fast=0.65; v_fused = (1-fast)*v_fused + fast*gpsSpeed; }
     }
     if (v_fused<0) v_fused=0;
-    const n = Math.max(0, Math.min(1, v_fused/Math.max(0.1, VMAX)));
-    applyMaster(n);
+    const raw = Math.max(0, Math.min(1, v_fused/Math.max(0.1, VMAX)));
+    const deltaTarget = raw - morphTarget;
+    const targetRate = Math.abs(deltaTarget) < 0.02 ? 0.1 : 0.3;
+    morphTarget += deltaTarget * targetRate;
+    if (Math.abs(raw - morphTarget) < 0.001) morphTarget = raw;
+    const deltaSmooth = morphTarget - morphSmooth;
+    const smoothRate = Math.abs(deltaSmooth) < 0.005 ? 0.25 : 0.15;
+    morphSmooth += deltaSmooth * smoothRate;
+    if (Math.abs(deltaSmooth) < 0.0005) morphSmooth = morphTarget;
+    if (!manualMode){
+      applyMaster(morphSmooth);
+    }
     updateStats();
     requestAnimationFrame(fuseSpeed);
   }
