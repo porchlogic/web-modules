@@ -332,8 +332,44 @@
     'vowel','formantQ','throatMix','combMix','combMs',
     'warmDrive','lowLift','highTrim','driftDepth'
   ];
+  const SNAPSHOT_STORE_KEY = 'speedMorphSnapshots';
   let snapshots = [];
   let updatingUI = false;
+
+  function persistSnapshots(){
+    if (!('localStorage' in window)) return;
+    try {
+      localStorage.setItem(SNAPSHOT_STORE_KEY, JSON.stringify(snapshots));
+    } catch (err) {
+      console.warn('Snapshot save failed', err);
+    }
+  }
+
+  function restoreSnapshots(){
+    if (!('localStorage' in window)) return;
+    try {
+      const raw = localStorage.getItem(SNAPSHOT_STORE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      snapshots = parsed.map(s => {
+        const pos = typeof s.pos === 'number' ? s.pos : parseFloat(s.pos);
+        const p = {};
+        if (s.p && typeof s.p === 'object'){
+          for (const id of PARAM_IDS){
+            if (s.p[id] == null) continue;
+            const val = typeof s.p[id] === 'number' ? s.p[id] : parseFloat(s.p[id]);
+            if (!Number.isNaN(val)) p[id] = val;
+          }
+        }
+        return { pos: Number.isFinite(pos) ? Math.min(Math.max(pos, 0), 1) : 0, p };
+      }).filter(s => s && typeof s.pos === 'number');
+      snapshots.sort((a,b)=>a.pos-b.pos);
+    } catch (err) {
+      console.warn('Snapshot restore failed', err);
+      snapshots = [];
+    }
+  }
 
   function getParamVector(){ const p={}; for(const id of PARAM_IDS){ p[id]=+($(id).value); } return p; }
   function setParamVector(p){ updatingUI=true; for(const id of PARAM_IDS){ if(p[id]==null) continue; $(id).value=p[id]; } updatingUI=false; applyParams(); }
@@ -357,6 +393,7 @@
     const idx=snapshots.findIndex(s=>Math.abs(s.pos-pos)<EPS);
     if(idx>=0) snapshots[idx]={pos,p}; else { snapshots.push({pos,p}); snapshots.sort((a,b)=>a.pos-b.pos); }
     updateSnapshotListUI();
+    persistSnapshots();
   }
   function applyMaster(x, {updateSlider=true}={}){
     if(updateSlider){
@@ -389,7 +426,7 @@
   PARAM_IDS.forEach(id=>{ $(id).addEventListener('input', ()=>{ if(!updatingUI) applyParams(); }); });
   $('vowel').addEventListener('input', ()=>{ if(started) applyVowel(+$('vowel').value); });
   $('saveKF').addEventListener('click', ()=> saveSnapshotAt(+morphSlider.value));
-  $('clearKF').addEventListener('click', ()=>{ snapshots=[]; updateSnapshotListUI(); });
+  $('clearKF').addEventListener('click', ()=>{ snapshots=[]; updateSnapshotListUI(); persistSnapshots(); });
   $('snapTo').addEventListener('click', ()=>{
     if(!snapshots.length) return;
     const x=+morphSlider.value; let nearest=snapshots[0], best=Math.abs(x-nearest.pos);
@@ -524,6 +561,9 @@
     requestAnimationFrame(fuseSpeed);
   }
   fuseSpeed();
+
+  restoreSnapshots();
+  updateSnapshotListUI();
 
   $('startSensors').addEventListener('click', ()=>{ enableMotion(); log('Motion requested'); });
   $('startGPS').addEventListener('click', ()=>{ startGPS(); });
