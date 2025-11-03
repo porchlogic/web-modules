@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Speed Morph Drone</title>
+<style>
+  body{margin:0;background:#0b0f14;color:#e8eef6;font:14px system-ui;touch-action:manipulation}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px}
+  h1{font-size:20px;margin:8px 0 14px;font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+  .card{background:#121826;border:1px solid #1e2a3a;border-radius:12px;padding:14px}
+  .row{display:flex;align-items:center;gap:12px;margin:10px 0}
+  label{flex:1;color:#a8b6c7;font-size:12px}
+  input[type=range]{width:170px}
+  select,button{border:1px solid #243149;background:#141e2b;color:#e8eef6;padding:8px 10px;border-radius:10px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .muted{font-size:12px;color:#9fb3c8}
+  .top{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center}
+  .master{background:#0f1523;border:1px solid #21314a;border-radius:12px;padding:12px}
+  .kf{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .kf small{opacity:.8}
+  .badge{display:inline-block;padding:2px 6px;border-radius:8px;background:#182235;border:1px solid #2a3b5b;font-size:11px}
+  .sensors{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px}
+  .stat{font-size:13px;display:flex;justify-content:space-between;margin:4px 0}
+  #log{font:12px/1.35 ui-monospace,Menlo,Consolas,monospace;background:#080c12;border:1px solid #1d293a;border-radius:10px;padding:10px;max-height:140px;overflow:auto;margin-top:10px;white-space:pre-wrap}
+</style>
+<body>
+<div class="wrap">
+  <h1>🌌 Speed Morph Drone — sensor-driven master morph</h1>
+
+  <div class="card master">
+    <div class="top">
+      <div class="row" style="margin:0">
+        <label style="min-width:120px">Master Morph (speed)</label>
+        <input id="morph" type="range" min="0" max="1" step="0.001" value="0" disabled>
+      </div>
+      <button id="saveKF">Save snapshot</button>
+      <button id="snapTo" title="Move master to nearest snapshot">Snap to nearest</button>
+      <button id="clearKF" title="Remove all snapshots">Clear</button>
+    </div>
+    <div class="kf"><small>Snapshots:</small><span id="kfList" class="muted">none</span></div>
+    <div class="muted">Create a few sonic snapshots, then move to drive them with real-world speed.</div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="row" style="margin:0 0 8px">
+      <button id="startAudio">Start Audio</button>
+      <button id="stopAudio" disabled>Stop Audio</button>
+      <button id="startSensors">Start Motion</button>
+      <button id="startGPS">Start GPS</button>
+      <button id="stopGPS" disabled>Stop GPS</button>
+      <span id="status" class="muted">idle</span>
+    </div>
+    <div class="row" style="margin:0">
+      <label style="min-width:120px">Max speed for morph (m/s)</label>
+      <input id="vmax" type="range" min="4" max="25" value="12" step="1">
+      <span id="vmaxv" class="muted">12</span>
+    </div>
+    <div class="sensors">
+      <div>
+        <div class="stat"><span>Fused speed</span><b id="v_fused">-</b><span class="muted">m/s</span></div>
+        <div class="stat"><span>Fused speed</span><b id="v_fused_mph">-</b><span class="muted">mph</span></div>
+        <div class="stat"><span>Accel derived</span><b id="v_acc">-</b><span class="muted">m/s</span></div>
+        <div class="stat"><span>Accel Hz</span><b id="hz">0</b></div>
+      </div>
+      <div>
+        <div class="stat"><span>GPS speed</span><b id="v_gps">-</b><span class="muted">m/s</span></div>
+        <div class="stat"><span>GPS acc</span><b id="acc">-</b><span class="muted">m</span></div>
+        <div class="stat"><span>Fix age</span><b id="fixAge">-</b><span class="muted">ms</span></div>
+        <div class="stat"><span>Dist since anchor</span><b id="dist">0</b><span class="muted">m</span></div>
+      </div>
+    </div>
+    <div id="log" aria-live="polite"></div>
+  </div>
+
+  <div class="grid" style="margin-top:18px">
+    <div class="card">
+      <h3>Master &amp; Tone</h3>
+      <div class="row"><label>Volume</label><input id="vol" type="range" min="0" max="1" step="0.001" value="0.28"></div>
+      <div class="row"><label>Brightness (LPF)</label><input id="cut" type="range" min="200" max="8000" step="1" value="1600"></div>
+      <div class="row"><label>Noise</label><input id="noise" type="range" min="0" max="1" step="0.001" value="0.12"></div>
+      <div class="row"><label>Delay Mix</label><input id="dmix" type="range" min="0" max="1" step="0.001" value="0.22"></div>
+      <div class="row"><label>Delay Time (ms)</label><input id="dtime" type="range" min="100" max="900" step="1" value="420"></div>
+      <div class="row"><label>Delay Feedback</label><input id="dfb" type="range" min="0" max="0.9" step="0.001" value="0.45"></div>
+      <div class="row"><label>Reverb Mix</label><input id="rmix" type="range" min="0" max="1" step="0.001" value="0.48"></div>
+    </div>
+
+    <div class="card">
+      <h3>Note A (root)</h3>
+      <div class="row"><label>Pitch A (Hz)</label><input id="pitchA" type="range" min="30" max="200" step="0.01" value="65.41"></div>
+      <div class="row"><label>Detune A (cents)</label><input id="detA" type="range" min="0" max="40" step="0.1" value="12"></div>
+      <div class="row"><label>Sub A</label><input id="subA" type="range" min="0" max="1" step="0.001" value="0.3"></div>
+      <div class="row"><label>Level A</label><input id="levA" type="range" min="0" max="1" step="0.001" value="0.9"></div>
+    </div>
+
+    <div class="card">
+      <h3>Note B (second)</h3>
+      <div class="row"><label>Interval</label>
+        <select id="interval">
+          <option value="0">Unison (0)</option>
+          <option value="3">m3 (+3)</option>
+          <option value="4" selected>M3 (+4)</option>
+          <option value="5">P4 (+5)</option>
+          <option value="7">P5 (+7)</option>
+          <option value="10">m7 (+10)</option>
+          <option value="12">Oct (+12)</option>
+        </select>
+      </div>
+      <div class="row"><label>Detune B (cents)</label><input id="detB" type="range" min="0" max="40" step="0.1" value="16"></div>
+      <div class="row"><label>Sub B</label><input id="subB" type="range" min="0" max="1" step="0.001" value="0.18"></div>
+      <div class="row"><label>Level B</label><input id="levB" type="range" min="0" max="1" step="0.001" value="0.65"></div>
+      <div class="row"><label>Slow Glide (sec)</label><input id="glide" type="range" min="0" max="5" step="0.01" value="1.2"></div>
+    </div>
+
+    <div class="card">
+      <h3>Throat (overtone feel)</h3>
+      <div class="row"><label>Vowel (A–E–I–O–U)</label><input id="vowel" type="range" min="0" max="1" step="0.001" value="0.15"></div>
+      <div class="row"><label>Formant Q</label><input id="formantQ" type="range" min="2" max="25" step="0.1" value="12"></div>
+      <div class="row"><label>Throat Mix</label><input id="throatMix" type="range" min="0" max="1" step="0.001" value="0.55"></div>
+      <div class="row"><label>Comb Amount</label><input id="combMix" type="range" min="0" max="1" step="0.001" value="0.35"></div>
+      <div class="row"><label>Comb Pitch (ms)</label><input id="combMs" type="range" min="2" max="14" step="0.01" value="7.6"></div>
+    </div>
+
+    <div class="card">
+      <h3>Warmth</h3>
+      <div class="row"><label>Warmth Drive</label><input id="warmDrive" type="range" min="0.8" max="1.8" step="0.001" value="1.2"></div>
+      <div class="row"><label>Low Lift (dB)</label><input id="lowLift" type="range" min="0" max="4" step="0.01" value="1.8"></div>
+      <div class="row"><label>High Trim (dB)</label><input id="highTrim" type="range" min="-3" max="0" step="0.01" value="-1.5"></div>
+      <div class="row"><label>Drift Depth</label><input id="driftDepth" type="range" min="0" max="1" step="0.001" value="0.6"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(()=> {
+  const $ = id => document.getElementById(id);
+  const log = msg => {
+    const L = $('log');
+    const t = new Date().toLocaleTimeString();
+    L.textContent += '[' + t + '] ' + msg + '\n';
+    L.scrollTop = L.scrollHeight;
+  };
+  const setStatus = t => { $('status').textContent = t; };
+
+  // ===== AUDIO CORE (from 2.html) =====
+  let ctx, started=false;
+  let master, lp, comp, limiter, dryBus, postTone;
+  let delay, delayGain, fb, convolver, revGain, noise, noiseGain;
+  let preSat, sat, lowShelf, highShelf, outBus;
+  let driftId = 0;
+  const A = {osc:[], pans:[], gains:[], sub:null, subG:null, level:null};
+  const B = {osc:[], pans:[], gains:[], sub:null, subG:null, level:null};
+  let throatIn, throatOut, f1, f2, combMixGain, combDelay, combLP, combFB;
+
+  const semitone = s => Math.pow(2, s/12);
+  const setTarget = (p, v, sec=0.2) => p.setTargetAtTime(v, ctx.currentTime, Math.max(0.02, sec*0.3));
+
+  function mkLimiterCurve(){ const n=65536,c=new Float32Array(n),cut=0.9; for(let i=0;i<n;i++){ const x=i/n*2-1; c[i]=Math.tanh((x/cut)*2.8);} return c; }
+  function mkReverbImpulse(seconds=3.0,decay=2.6){
+    const len=(seconds*ctx.sampleRate)|0,buf=ctx.createBuffer(2,len,ctx.sampleRate);
+    for(let ch=0;ch<2;ch++){ const d=buf.getChannelData(ch); for(let i=0;i<len;i++){ const t=1-i/len; d[i]=(Math.random()*2-1)*Math.pow(t,decay); } }
+    return buf;
+  }
+  function mkSaturationCurve(){
+    const n=65536, c=new Float32Array(n);
+    for(let i=0;i<n;i++){ const x=i/n*2-1; c[i] = Math.tanh(1.6*x)*0.85; }
+    return c;
+  }
+  function makeVoice(baseHz, detC, subAmt, levelAmt){
+    const v = {osc:[], pans:[], gains:[], sub:null, subG:null, level:null};
+    const waves=['sawtooth','triangle','sine'], freqs=[1,2,3], spreads=[-detC,detC*0.6,detC];
+    for(let i=0;i<3;i++){
+      const o=ctx.createOscillator(); o.type=waves[i%3]; o.frequency.value=baseHz*freqs[i]; o.detune.value=spreads[i];
+      const g=ctx.createGain(); g.gain.value=[0.22,0.18,0.14][i];
+      const p=ctx.createStereoPanner(); p.pan.value=[-0.35,0.35,0][i];
+      o.connect(g).connect(p).connect(dryBus); o.start();
+      v.osc.push(o); v.gains.push(g); v.pans.push(p);
+    }
+    v.sub=ctx.createOscillator(); v.sub.type='sine'; v.sub.frequency.value=baseHz/2;
+    v.subG=ctx.createGain(); v.subG.gain.value=subAmt;
+    v.sub.connect(v.subG).connect(dryBus); v.sub.start();
+
+    v.level=ctx.createGain(); v.level.gain.value=levelAmt;
+    for(let i=0;i<v.gains.length;i++){ v.gains[i].disconnect(); v.gains[i].connect(v.level).connect(v.pans[i]).connect(dryBus); }
+    v.subG.disconnect(); v.subG.connect(v.level).connect(dryBus);
+    return v;
+  }
+  function applyVowel(x){
+    const tbl=[{F1:800,F2:1150},{F1:500,F2:1700},{F1:350,F2:2200},{F1:450,F2:800},{F1:325,F2:700}];
+    const seg=Math.min(tbl.length-2, Math.floor(x*(tbl.length-1)));
+    const t=(x*(tbl.length-1))-seg, a=tbl[seg], b=tbl[seg+1];
+    setTarget(f1.frequency, a.F1+(b.F1-a.F1)*t, 0.15);
+    setTarget(f2.frequency, a.F2+(b.F2-a.F2)*t, 0.15);
+  }
+  function wireWarmthChain(){
+    preSat = ctx.createGain();        preSat.gain.value = +$('warmDrive').value;
+    sat    = ctx.createWaveShaper();  sat.curve = mkSaturationCurve();
+    lowShelf  = ctx.createBiquadFilter(); lowShelf.type='lowshelf';  lowShelf.frequency.value=180;  lowShelf.gain.value= +$('lowLift').value;
+    highShelf = ctx.createBiquadFilter(); highShelf.type='highshelf'; highShelf.frequency.value=5200; highShelf.gain.value= +$('highTrim').value;
+
+    postTone.connect(preSat).connect(sat).connect(lowShelf).connect(highShelf);
+
+    highShelf.connect(delay).connect(fb).connect(delay);
+    delay.connect(delayGain);
+    highShelf.connect(convolver).connect(revGain);
+
+    outBus = ctx.createGain();
+    highShelf.connect(outBus);
+    delayGain.connect(outBus);
+    revGain.connect(outBus);
+    outBus.connect(comp).connect(limiter).connect(master).connect(ctx.destination);
+  }
+  function startDrift(){
+    const depth = +$('driftDepth').value;
+    const baseStep = 0.015 * depth;
+    const baseFlutter = 0.6 * depth;
+    function step(val, s){ return val + (Math.random()-0.5)*s; }
+    let a=[0,0,0], b=[0,0,0], f=0;
+    const t0 = performance.now();
+    function tick(){
+      const t = (performance.now()-t0)/1000;
+      for(let i=0;i<3;i++){ a[i]=step(a[i], baseStep); }
+      for(let i=0;i<3;i++){ b[i]=step(b[i], baseStep); }
+      const flutter = Math.sin(t*2*Math.PI*0.7)*baseFlutter;
+      if (A.osc[0]) A.osc[0].detune.setTargetAtTime(-+$('detA').value + a[0] + flutter, ctx.currentTime, 0.25);
+      if (A.osc[1]) A.osc[1].detune.setTargetAtTime( +$('detA').value*0.6 + a[1], ctx.currentTime, 0.25);
+      if (A.osc[2]) A.osc[2].detune.setTargetAtTime( +$('detA').value + a[2], ctx.currentTime, 0.25);
+      if (B.osc[0]) B.osc[0].detune.setTargetAtTime(-+$('detB').value + b[0] + flutter*0.8, ctx.currentTime, 0.25);
+      if (B.osc[1]) B.osc[1].detune.setTargetAtTime( +$('detB').value*0.6 + b[1], ctx.currentTime, 0.25);
+      if (B.osc[2]) B.osc[2].detune.setTargetAtTime( +$('detB').value + b[2], ctx.currentTime, 0.25);
+      f = step(f, 0.6*depth);
+      const baseCut = +$('cut').value;
+      lp.frequency.setTargetAtTime(Math.max(150, baseCut + Math.sin(t*0.12)*(90*depth) + f), ctx.currentTime, 0.3);
+      driftId = requestAnimationFrame(tick);
+    }
+    driftId = requestAnimationFrame(tick);
+  }
+  async function startAudio(){
+    if(started) return;
+    ctx=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
+    try { await ctx.resume(); } catch(e) {}
+    master=ctx.createGain(); master.gain.value=0.0001;
+    comp=ctx.createDynamicsCompressor(); comp.threshold.value=-22; comp.knee.value=18; comp.ratio.value=2.5; comp.attack.value=0.01; comp.release.value=0.2;
+    limiter=ctx.createWaveShaper(); limiter.curve=mkLimiterCurve();
+    dryBus=ctx.createGain(); postTone=ctx.createGain();
+    lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.Q.value=0.7; lp.frequency.value=+$('cut').value;
+    dryBus.connect(lp).connect(postTone);
+    const nbuf=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate);
+    const nd=nbuf.getChannelData(0); for(let i=0;i<nd.length;i++) nd[i]=(Math.random()*2-1)*0.6;
+    noise=ctx.createBufferSource(); noise.buffer=nbuf; noise.loop=true;
+    noiseGain=ctx.createGain(); noiseGain.gain.value=+$('noise').value;
+    noise.connect(noiseGain).connect(dryBus); noise.start();
+    delay=ctx.createDelay(1.2); delay.delayTime.value=+$('dtime').value/1000;
+    fb=ctx.createGain(); fb.gain.value=+$('dfb').value;
+    delayGain=ctx.createGain(); delayGain.gain.value=+$('dmix').value;
+    convolver=ctx.createConvolver(); convolver.buffer=mkReverbImpulse(3.2,2.8);
+    revGain=ctx.createGain(); revGain.gain.value=+$('rmix').value;
+    const baseA=+$('pitchA').value; Object.assign(A, makeVoice(baseA, +$('detA').value, +$('subA').value, +$('levA').value));
+    const baseB=baseA*semitone(+$('interval').value); Object.assign(B, makeVoice(baseB, +$('detB').value, +$('subB').value, +$('levB').value));
+    throatIn=ctx.createGain(); throatOut=ctx.createGain(); throatOut.gain.value=+$('throatMix').value;
+    f1=ctx.createBiquadFilter(); f1.type='bandpass'; f1.Q.value=+$('formantQ').value;
+    f2=ctx.createBiquadFilter(); f2.type='bandpass'; f2.Q.value=+$('formantQ').value;
+    dryBus.connect(throatIn); throatIn.connect(f1).connect(throatOut); throatIn.connect(f2).connect(throatOut);
+    combDelay=ctx.createDelay(0.05); combLP=ctx.createBiquadFilter(); combLP.type='lowpass'; combLP.frequency.value=5000;
+    combFB=ctx.createGain(); combFB.gain.value=0.75; combMixGain=ctx.createGain(); combMixGain.gain.value=+$('combMix').value;
+    throatIn.connect(combDelay).connect(combLP).connect(combFB).connect(combDelay); combDelay.connect(combMixGain);
+    throatOut.connect(postTone); combMixGain.connect(postTone);
+    combDelay.delayTime.value=+$('combMs').value/1000; applyVowel(+$('vowel').value);
+    wireWarmthChain();
+    setTarget(master.gain, +$('vol').value, 0.25);
+    startDrift();
+    started=true; $('startAudio').disabled=true; $('stopAudio').disabled=false; setStatus('audio running'); log('Audio started');
+  }
+  function stopAudio(){
+    if(!started) return;
+    setTarget(master.gain,0.00001,0.25);
+    if (typeof driftId === 'number') cancelAnimationFrame(driftId);
+    setTimeout(()=>{ ctx.close(); started=false; $('startAudio').disabled=false; $('stopAudio').disabled=true; setStatus('audio stopped'); log('Audio stopped'); },350);
+  }
+  function applyParams(){
+    if(!started) return;
+    setTarget(master.gain, +$('vol').value, 0.15);
+    setTarget(lp.frequency, +$('cut').value, 0.1);
+    setTarget(noiseGain.gain, +$('noise').value, 0.2);
+    setTarget(delay.delayTime, +$('dtime').value/1000, 0.1);
+    setTarget(fb.gain, +$('dfb').value, 0.2);
+    setTarget(delayGain.gain, +$('dmix').value, 0.1);
+    setTarget(revGain.gain, +$('rmix').value, 0.2);
+    f1.Q.setTargetAtTime(+$('formantQ').value, ctx.currentTime, 0.15);
+    f2.Q.setTargetAtTime(+$('formantQ').value, ctx.currentTime, 0.15);
+    throatOut.gain.setTargetAtTime(+$('throatMix').value, ctx.currentTime, 0.15);
+    combMixGain.gain.setTargetAtTime(+$('combMix').value, ctx.currentTime, 0.15);
+    combDelay.delayTime.setTargetAtTime(+$('combMs').value/1000, ctx.currentTime, 0.1);
+    const glide=+$('glide').value;
+    A.osc.forEach((o,i)=>o.frequency.setTargetAtTime(+$('pitchA').value*[1,2,3][i], ctx.currentTime, glide));
+    A.sub.frequency.setTargetAtTime(+$('pitchA').value/2, ctx.currentTime, glide);
+    A.osc[0].detune.setTargetAtTime(-+$('detA').value, ctx.currentTime, 0.2);
+    A.osc[1].detune.setTargetAtTime(+$('detA').value*0.6, ctx.currentTime, 0.2);
+    A.osc[2].detune.setTargetAtTime(+$('detA').value, ctx.currentTime, 0.2);
+    A.subG.gain.setTargetAtTime(+$('subA').value, ctx.currentTime, 0.2);
+    A.level.gain.setTargetAtTime(+$('levA').value, ctx.currentTime, 0.2);
+    const baseB=+$('pitchA').value*semitone(+$('interval').value);
+    B.osc.forEach((o,i)=>o.frequency.setTargetAtTime(baseB*[1,2,3][i], ctx.currentTime, glide));
+    B.sub.frequency.setTargetAtTime(baseB/2, ctx.currentTime, glide);
+    B.osc[0].detune.setTargetAtTime(-+$('detB').value, ctx.currentTime, 0.2);
+    B.osc[1].detune.setTargetAtTime(+$('detB').value*0.6, ctx.currentTime, 0.2);
+    B.osc[2].detune.setTargetAtTime(+$('detB').value, ctx.currentTime, 0.2);
+    B.subG.gain.setTargetAtTime(+$('subB').value, ctx.currentTime, 0.2);
+    B.level.gain.setTargetAtTime(+$('levB').value, ctx.currentTime, 0.2);
+    if (preSat) preSat.gain.setTargetAtTime(+$('warmDrive').value, ctx.currentTime, 0.15);
+    if (lowShelf) lowShelf.gain.setTargetAtTime(+$('lowLift').value, ctx.currentTime, 0.2);
+    if (highShelf) highShelf.gain.setTargetAtTime(+$('highTrim').value, ctx.currentTime, 0.2);
+  }
+
+  const PARAM_IDS = [
+    'vol','cut','noise','dmix','dtime','dfb','rmix',
+    'pitchA','detA','subA','levA','interval','detB','subB','levB','glide',
+    'vowel','formantQ','throatMix','combMix','combMs',
+    'warmDrive','lowLift','highTrim','driftDepth'
+  ];
+  let snapshots = [];
+  let updatingUI = false;
+
+  function getParamVector(){ const p={}; for(const id of PARAM_IDS){ p[id]=+($(id).value); } return p; }
+  function setParamVector(p){ updatingUI=true; for(const id of PARAM_IDS){ if(p[id]==null) continue; $(id).value=p[id]; } updatingUI=false; applyParams(); }
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function interp(a,b,t){ const out={}; for(const id of PARAM_IDS){ out[id]=lerp(a[id],b[id],t); } return out; }
+  function findNeighbors(x){
+    if(snapshots.length===0) return [null,null,0];
+    if(snapshots.length===1) return [snapshots[0],snapshots[0],0];
+    let left=snapshots[0], right=snapshots[snapshots.length-1];
+    if(x<=left.pos) return [left,left,0];
+    if(x>=right.pos) return [right,right,0];
+    for(let i=0;i<snapshots.length-1;i++){
+      const a=snapshots[i], b=snapshots[i+1];
+      if(x>=a.pos && x<=b.pos){ const t=(x-a.pos)/Math.max(1e-9,(b.pos-a.pos)); return [a,b,t]; }
+    }
+    return [left,right,0];
+  }
+  function updateSnapshotListUI(){ $('kfList').textContent = snapshots.length? snapshots.map(s=>s.pos.toFixed(2)).join(' • ') : 'none'; }
+  function saveSnapshotAt(pos){
+    const p=getParamVector(), EPS=0.01;
+    const idx=snapshots.findIndex(s=>Math.abs(s.pos-pos)<EPS);
+    if(idx>=0) snapshots[idx]={pos,p}; else { snapshots.push({pos,p}); snapshots.sort((a,b)=>a.pos-b.pos); }
+    updateSnapshotListUI();
+  }
+  function applyMaster(x){
+    $('morph').value=x;
+    if(snapshots.length===0) return;
+    const [a,b,t]=findNeighbors(x);
+    if(!a||!b) return;
+    const p=interp(a.p,b.p,t);
+    setParamVector(p);
+  }
+
+  $('startAudio').addEventListener('click', startAudio);
+  $('stopAudio').addEventListener('click', stopAudio);
+  PARAM_IDS.forEach(id=>{ $(id).addEventListener('input', ()=>{ if(!updatingUI) applyParams(); }); });
+  $('vowel').addEventListener('input', ()=>{ if(started) applyVowel(+$('vowel').value); });
+  $('saveKF').addEventListener('click', ()=> saveSnapshotAt(+$('morph').value));
+  $('clearKF').addEventListener('click', ()=>{ snapshots=[]; updateSnapshotListUI(); });
+  $('snapTo').addEventListener('click', ()=>{
+    if(!snapshots.length) return;
+    const x=+$('morph').value; let nearest=snapshots[0], best=Math.abs(x-nearest.pos);
+    for(const s of snapshots){ const d=Math.abs(x-s.pos); if(d<best){ best=d; nearest=s; } }
+    applyMaster(nearest.pos);
+  });
+  ['touchstart','touchend','mousedown','keydown'].forEach(ev=>{
+    document.addEventListener(ev, async ()=>{ try{ if(ctx && ctx.state!=='running') await ctx.resume(); }catch(e){} }, {passive:true});
+  });
+
+  // ===== SPEED SENSING (from 1.html) =====
+  let VMAX = +$('vmax').value;
+  $('vmaxv').textContent = VMAX;
+  $('vmax').addEventListener('input', e=>{ VMAX=+e.target.value; $('vmaxv').textContent=e.target.value; });
+
+  let lastMotionT=null, emaHz=0, gX=0,gY=0,gZ=0;
+  const LPF_G=0.02, NOISE_FLOOR=0.12, BETA=0.6;
+  let v_acc=0;
+  let gpsWatch=null, lastFixAge=Infinity, lastPos=null, anchorPos=null, distSinceAnchor=0, gpsSpeed=null, lastFix=null;
+  let mode='ACCEL_LEAD', v_fused=0;
+  const ACC_OK=20, FIX_STALE=1500, D_ANCHOR=10, SPEED_DISAG=1.5, A_LEAD=0.9;
+
+  function toRad(d){ return d*Math.PI/180; }
+  function haversine(a,b){ const R=6371000, dLat=toRad(b.lat-a.lat), dLon=toRad(b.lon-a.lon);
+    const s1=Math.sin(dLat/2), s2=Math.sin(dLon/2), v=s1*s1+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*s2*s2;
+    return 2*R*Math.asin(Math.min(1,Math.sqrt(v))); }
+
+  function updateStats(){
+    $('v_acc').textContent=v_acc.toFixed(2);
+    $('v_gps').textContent=gpsSpeed==null?'-':gpsSpeed.toFixed(2);
+    $('v_fused').textContent=v_fused.toFixed(2);
+    $('v_fused_mph').textContent=(v_fused*2.236936).toFixed(2);
+    $('hz').textContent=emaHz.toFixed(1);
+    $('fixAge').textContent=isFinite(lastFixAge)?lastFixAge.toFixed(0):'-';
+    $('dist').textContent=distSinceAnchor.toFixed(1);
+    $('acc').textContent=lastFix && lastFix.accuracy!=null ? Math.round(lastFix.accuracy) : '-';
+  }
+
+  function onMotion(e){
+    const t=performance.now()/1000, dt=lastMotionT?(t-lastMotionT):0; lastMotionT=t;
+    if (dt<=0) return; if (dt>0.25) dt=0.25;
+    const instHz=1/Math.max(0.001,dt); emaHz=0.8*emaHz+0.2*instHz;
+    let ax,ay,az;
+    if (e.acceleration && (e.acceleration.x!=null||e.acceleration.y!=null||e.acceleration.z!=null)){
+      ax=e.acceleration.x||0; ay=e.acceleration.y||0; az=e.acceleration.z||0;
+    } else {
+      const ag=e.accelerationIncludingGravity||{}; const ix=ag.x||0, iy=ag.y||0, iz=ag.z||0;
+      gX=(1-LPF_G)*gX+LPF_G*ix; gY=(1-LPF_G)*gY+LPF_G*iy; gZ=(1-LPF_G)*gZ+LPF_G*iz;
+      ax=ix-gX; ay=iy-gY; az=iz-gZ;
+    }
+    const amag=Math.sqrt(ax*ax+ay*ay+az*az), a_eff=Math.max(0, amag - NOISE_FLOOR);
+    v_acc += a_eff*dt; v_acc -= (v_acc*BETA)*dt; if (v_acc<0) v_acc=0;
+  }
+  function enableMotion(){
+    if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission==='function'){
+      DeviceMotionEvent.requestPermission().then(function(p){
+        if (p!=='granted'){ setStatus('Motion permission denied'); log('Motion permission denied'); return; }
+        window.addEventListener('devicemotion', onMotion, false);
+        setStatus('Accelerometer active'); log('Motion enabled');
+      }).catch(function(err){ setStatus('Motion error'); log('Motion error: '+err); });
+    } else {
+      window.addEventListener('devicemotion', onMotion, false);
+      setStatus('Accelerometer active'); log('Motion enabled');
+    }
+  }
+  function startGPS(){
+    if (!navigator.geolocation){ setStatus('No geolocation'); log('No geolocation'); return; }
+    try{
+      gpsWatch = navigator.geolocation.watchPosition(onGPS, function(e){
+        setStatus('GPS error'); log('GPS error: '+e.message);
+      }, { enableHighAccuracy:true, maximumAge:1000, timeout:10000 });
+      setStatus('GPS started…'); log('GPS watch started');
+      $('startGPS').disabled=true; $('stopGPS').disabled=false;
+    }catch(err){ setStatus('GPS start error'); log('GPS start error: '+err); }
+  }
+  function onGPS(pos){
+    const c=pos.coords, now=Date.now();
+    lastFixAge=now-pos.timestamp;
+    const cur={lat:c.latitude, lon:c.longitude, acc:c.accuracy||50, t:pos.timestamp};
+    let v = (c.speed==null || isNaN(c.speed)) ? null : c.speed;
+    if (!v && lastPos){ const dt=Math.max(0.25,(cur.t-lastPos.t)/1000), d=haversine(lastPos,cur); v=d/dt; }
+    gpsSpeed = (v!=null && isFinite(v) && v>=0) ? v : null;
+    if (anchorPos==null) anchorPos=cur;
+    if (lastPos){ const step=haversine(lastPos,cur); if (step > Math.max((c.accuracy||30)*0.5, 2)) distSinceAnchor += step; }
+    lastPos=cur;
+    lastFix = {cur:cur, accuracy:c.accuracy||50};
+    setStatus('GPS fix OK');
+  }
+  function stopGPS(){
+    if (gpsWatch!=null){ navigator.geolocation.clearWatch(gpsWatch); gpsWatch=null; }
+    $('startGPS').disabled=false; $('stopGPS').disabled=true; setStatus('GPS stopped'); log('GPS stopped');
+  }
+  function maybeSwitchModes(){
+    const accOK = lastFix && (lastFix.accuracy <= ACC_OK);
+    const fixFresh = lastFixAge <= FIX_STALE;
+    const disagree = (gpsSpeed!=null) && (Math.abs((v_acc||0) - gpsSpeed) >= SPEED_DISAG);
+    const accelWake = (v_acc>0.1) || (emaHz>5 && v_acc>0.05);
+    if (mode==='ACCEL_LEAD'){
+      if (accOK && fixFresh && ((distSinceAnchor >= D_ANCHOR) || disagree)) {
+        mode='GPS_ANCHOR';
+        if (gpsSpeed!=null) v_fused = 0.3*v_fused + 0.7*gpsSpeed;
+        log('Switch -> GPS_ANCHOR');
+      }
+    } else {
+      if (accelWake || !accOK || !fixFresh || gpsSpeed==null){
+        mode='ACCEL_LEAD'; anchorPos = lastPos; distSinceAnchor = 0; log('Switch -> ACCEL_LEAD');
+      }
+    }
+  }
+  function fuseSpeed(){
+    maybeSwitchModes();
+    if (mode==='ACCEL_LEAD'){
+      v_fused = A_LEAD*v_acc + (1-A_LEAD)*v_fused;
+      if (gpsSpeed!=null && lastFixAge<=FIX_STALE){ const soft=0.05; v_fused = (1-soft)*v_fused + soft*gpsSpeed; }
+    } else {
+      if (gpsSpeed!=null){ const fast=0.65; v_fused = (1-fast)*v_fused + fast*gpsSpeed; }
+    }
+    if (v_fused<0) v_fused=0;
+    const n = Math.max(0, Math.min(1, v_fused/Math.max(0.1, VMAX)));
+    applyMaster(n);
+    updateStats();
+    requestAnimationFrame(fuseSpeed);
+  }
+  fuseSpeed();
+
+  $('startSensors').addEventListener('click', ()=>{ enableMotion(); log('Motion requested'); });
+  $('startGPS').addEventListener('click', ()=>{ startGPS(); });
+  $('stopGPS').addEventListener('click', ()=>{ stopGPS(); });
+
+  window.addEventListener('devicemotion', ()=>{}, { once:true });
+
+  if (location.protocol==='file:'){ log('Note: GPS may be blocked on file://; use http(s) if needed.'); }
+})();
+</script>
+</body>
+</html>
