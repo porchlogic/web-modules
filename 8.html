@@ -1,0 +1,390 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dune‑Style Shimmer Synth</title>
+<style>
+  :root{
+    --bg:#0b0f14;--panel:#121826;--line:#1f2a3a;--text:#e8eef6;--muted:#9fb0c7;
+    --accent:#4fb38f;--accent2:#de9151;--danger:#e57373
+  }
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px system-ui}
+  .wrap{max-width:980px;margin:0 auto;padding:16px}
+  h1{font-size:18px;margin:8px 0 12px;font-weight:600;letter-spacing:.2px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .row{display:flex;align-items:center;gap:10px;margin:8px 0}
+  .row label{flex:0 0 110px;color:var(--muted)}
+  .row input[type=range]{flex:1}
+  .btns{display:flex;gap:10px;flex-wrap:wrap}
+  button{appearance:none;border:1px solid var(--line);background:#0f1420;color:var(--text);
+    padding:10px 14px;border-radius:10px;cursor:pointer}
+  button.primary{background:var(--accent);border-color:#2f7f64;color:#07140f;font-weight:600}
+  button.danger{background:#221417;border-color:#5c2a31;color:#ffd8d8}
+  select, input{background:#0f1420;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px}
+  small{color:var(--muted)}
+  .k{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>"Shimmer in the Sand" — Micro‑Gliss Harmonic Web Synth</h1>
+  <div class="card">
+    <div class="btns">
+      <button id="startBtn" class="primary">Start</button>
+      <button id="stopBtn" class="danger">Stop</button>
+      <button id="holdBtn">Hold (freeze drift)</button>
+    </div>
+    <small>
+      Tip: Start → raise <b>Intensity</b> and <b>Blend</b>. It’s all generated locally (no samples).
+    </small>
+  </div>  <div class="grid">
+    <div class="card">
+      <h2>Core</h2>
+      <div class="row"><label>Root</label>
+        <select id="root">
+          <option>D</option><option>C</option><option>C#</option><option>D#</option>
+          <option>F</option><option>F#</option><option>G</option><option>G#</option>
+          <option>A</option><option>A#</option><option>B</option><option>E</option>
+        </select>
+        <select id="oct"><option>1</option><option>2</option><option selected>3</option><option>4</option></select>
+      </div>
+      <div class="row"><label>Intensity</label>
+        <input id="intensity" type="range" min="0" max="1" step="0.001" value="0.6">
+      </div>
+      <div class="row"><label>Brightness</label>
+        <input id="bright" type="range" min="100" max="10000" step="1" value="3000">
+      </div>
+      <div class="row"><label>Reverb</label>
+        <input id="reverb" type="range" min="0" max="1" step="0.001" value="0.5">
+      </div>
+      <div class="row"><label>Noise (sand)</label>
+        <input id="sand" type="range" min="0" max="1" step="0.001" value="0.15">
+      </div>
+    </div><div class="card">
+  <h2>Harmonics & Drift</h2>
+  <div class="row"><label>Cluster Size</label>
+    <input id="cluster" type="range" min="1" max="8" step="1" value="4">
+  </div>
+  <div class="row"><label>Detune (¢)</label>
+    <input id="detune" type="range" min="0" max="60" step="0.5" value="18">
+  </div>
+  <div class="row"><label>Gliss Speed</label>
+    <input id="gliss" type="range" min="0.05" max="2.0" step="0.01" value="0.35">
+  </div>
+  <div class="row"><label>Panning</label>
+    <input id="pan`" type="range" min="0" max="1" step="0.001" value="0.6">
+  </div>
+</div>
+
+<div class="card">
+  <h2>Scale Crossfade</h2>
+  <div class="row"><label>Scale A</label>
+    <select id="scaleA"></select>
+  </div>
+  <div class="row"><label>Scale B</label>
+    <select id="scaleB"></select>
+  </div>
+  <div class="row"><label>Blend</label>
+    <input id="blend" type="range" min="0" max="1" step="0.001" value="0.4">
+  </div>
+  <div class="row"><label>Density</label>
+    <input id="density" type="range" min="0" max="1" step="0.001" value="0.55">
+  </div>
+</div>
+
+<div class="card">
+  <h2>Formant Morph (voice‑like)</h2>
+  <div class="row"><label>Formant Amt</label>
+    <input id="formantAmt" type="range" min="0" max="1" step="0.001" value="0.7">
+  </div>
+  <div class="row"><label>Morph Speed</label>
+    <input id="formantSpd" type="range" min="0.02" max="1.0" step="0.01" value="0.15">
+  </div>
+</div>
+
+  </div>
+</div><script>
+(() => {
+  // ---------- Utility ----------
+  const A4 = 440;
+  const noteIndex = {C:0,"C#":1,D:2,"D#":3,E:4,F:5,"F#":6,G:7,"G#":8,A:9,"A#":10,B:11};
+  const midiToFreq = m => A4 * Math.pow(2, (m-69)/12);
+  const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
+  const lerp = (a,b,t)=>a+(b-a)*t;
+
+  // Some evocative scales (intervals in semitones from root)
+  const SCALES = {
+    "Dorian":[0,2,3,5,7,9,10],
+    "Phrygian":[0,1,3,5,7,8,10],
+    "Harmonic Minor":[0,2,3,5,7,8,11],
+    "Phrygian Dominant":[0,1,4,5,7,8,10],
+    "Octatonic (HW)":[0,1,3,4,6,7,9,10],
+    "Raga-like (Bhupali+)":[0,2,4,7,9,11],
+    "Suspended":[0,2,5,7,9],
+    "Whole Tone":[0,2,4,6,8,10]
+  };
+
+  // Harmonic partials we’ll emphasize (non-12TET ratios give the mirage)
+  const PARTIALS = [
+    {ratio:1, w:0.9}, {ratio:3/2, w:0.75}, {ratio:5/3, w:0.65},
+    {ratio:7/4, w:0.5}, {ratio:9/8, w:0.45}, {ratio:11/8, w:0.35}
+  ];
+
+  // ---------- Audio Graph ----------
+  let ctx, master, lowpass, reverbSend, convolver, formantBus, sandGain, panAmt=0.6;
+  let running=false, hold=false;
+
+  function makeReverbImpulse(seconds=4, decay=3.5){
+    const rate = ctx.sampleRate;
+    const len = Math.max(1, (seconds*rate)|0);
+    const buf = ctx.createBuffer(2, len, rate);
+    for(let ch=0; ch<2; ch++){
+      const d = buf.getChannelData(ch);
+      for(let i=0;i<len;i++){
+        const t = i/len;
+        const env = Math.pow(1 - t, decay);
+        d[i] = (Math.random()*2-1) * env;
+      }
+    }
+    return buf;
+  }
+
+  function setup(){
+    ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});
+    master = ctx.createGain(); master.gain.value = 0.8; master.connect(ctx.destination);
+
+    lowpass = ctx.createBiquadFilter(); lowpass.type = "lowpass"; lowpass.frequency.value = 3000;
+
+    // Formant chain (three peaking filters in series)
+    const f1 = ctx.createBiquadFilter(); f1.type = "peaking"; f1.Q.value = 3;
+    const f2 = ctx.createBiquadFilter(); f2.type = "peaking"; f2.Q.value = 3;
+    const f3 = ctx.createBiquadFilter(); f3.type = "peaking"; f3.Q.value = 3;
+    formantBus = {f1,f2,f3, amt:0.7, t:0};
+
+    convolver = ctx.createConvolver();
+    convolver.buffer = makeReverbImpulse(4.5, 3.2);
+    const revGain = ctx.createGain(); revGain.gain.value = 0.5;
+
+    reverbSend = ctx.createGain(); reverbSend.gain.value = 0.5;
+
+    sandGain = ctx.createGain(); sandGain.gain.value = 0.15;
+
+    // Noise (wind/sand), softly band-limited
+    const noise = ctx.createBufferSource();
+    const nbuf = ctx.createBuffer(1, ctx.sampleRate*2, ctx.sampleRate);
+    const ndata = nbuf.getChannelData(0);
+    for(let i=0;i<ndata.length;i++) ndata[i] = (Math.random()*2-1);
+    noise.buffer = nbuf; noise.loop = true;
+    const nBP = ctx.createBiquadFilter(); nBP.type = "bandpass"; nBP.frequency.value = 1500; nBP.Q.value = 0.7;
+
+    // Route: voices -> formants -> lowpass -> master
+    // Also send a split to convolver.
+    const mix = ctx.createGain(); mix.gain.value = 1;
+    const splitter = ctx.createGain(); splitter.gain.value = 1;
+
+    // main chain
+    mix.connect(formantBus.f1); formantBus.f1.connect(formantBus.f2); formantBus.f2.connect(formantBus.f3);
+    formantBus.f3.connect(lowpass);
+    lowpass.connect(master);
+
+    // reverb send
+    mix.connect(reverbSend);
+    reverbSend.connect(convolver); convolver.connect(revGain); revGain.connect(master);
+
+    // noise chain
+    noise.connect(nBP); nBP.connect(sandGain); sandGain.connect(master);
+    noise.start();
+
+    return {mix};
+  }
+
+  // ---------- Shimmer Voice ----------
+  class ShimmerVoice{
+    constructor(mix, freq, opts){
+      this.mix = mix;
+      this.pan = ctx.createStereoPanner();
+      this.vgain = ctx.createGain(); this.vgain.gain.value = 0;
+      this.vgain.connect(this.pan); this.pan.connect(mix);
+      this.nodes = [];
+      this.alive = true;
+
+      const now = ctx.currentTime;
+      const dur = opts.dur ?? (2 + Math.random()*5);
+      const attack = 0.8 + Math.random()*1.4;
+      const release = 1.2 + Math.random()*2.5;
+      const cluster = opts.cluster|0;
+      const detuneCents = opts.detune ?? 15;
+      const glissSpeed = opts.gliss ?? 0.3;
+      const basePan = (Math.random()*2-1) * panAmt;
+      this.pan.pan.setValueAtTime(basePan, now);
+
+      // Envelope
+      this.vgain.gain.cancelScheduledValues(now);
+      this.vgain.gain.setValueAtTime(0, now);
+      this.vgain.gain.linearRampToValueAtTime(0.9/(1+Math.random()*0.5), now+attack);
+      this.vgain.gain.setTargetAtTime(0, now+attack+dur, release);
+
+      // Create partial cluster
+      for(let i=0;i<cluster;i++){
+        const p = PARTIALS[i % PARTIALS.length];
+        const o = ctx.createOscillator();
+        const g = ctx.createGain(); g.gain.value = (p.w || 0.5) * 0.2 * (0.6+Math.random()*0.8);
+
+        // Detune and micro‑gliss via low‑freq oscillators
+        const dLFO = ctx.createOscillator(); dLFO.type = "sine"; dLFO.frequency.value = glissSpeed*(0.2+Math.random());
+        const dGain = ctx.createGain(); dGain.gain.value = detuneCents * 2; // cents peak‑to‑peak
+        dLFO.connect(dGain).connect(o.detune);
+
+        // Base frequency slightly different per partial
+        const startDet = (Math.random()*2-1) * detuneCents;
+        o.type = (i%2===0?"sawtooth":"triangle");
+        o.frequency.setValueAtTime(freq * p.ratio, now);
+        o.detune.setValueAtTime(startDet, now);
+
+        // Gentle random vibrato
+        const vib = ctx.createOscillator(); vib.type="sine"; vib.frequency.value = 0.12 + Math.random()*0.25;
+        const vGain = ctx.createGain(); vGain.gain.value = 4 + Math.random()*6; // cents
+        vib.connect(vGain).connect(o.detune);
+
+        o.connect(g).connect(this.vgain);
+        o.start(); dLFO.start(); vib.start();
+
+        this.nodes.push(o,g,dLFO,dGain,vib,vGain);
+      }
+
+      // cleanup
+      this.stopTime = now + attack + (opts.dur ?? 4) + 4;
+      this._killer = setTimeout(()=>this.dispose(), (this.stopTime - now)*1000 + 50);
+    }
+    dispose(){
+      if(!this.alive) return; this.alive=false;
+      try{this.nodes.forEach(n=>{try{n.stop && n.stop();}catch{}});}catch{}
+      this.nodes.length=0;
+    }
+  }
+
+  // ---------- Engine ----------
+  const state = {
+    root:"D", oct:3,
+    intensity:0.6, brightness:3000, reverb:0.5, sand:0.15,
+    cluster:4, detune:18, gliss:0.35,
+    scaleA:"Phrygian", scaleB:"Phrygian Dominant", blend:0.4, density:0.55,
+    formantAmt:0.7, formantSpd:0.15
+  };
+
+  // UI hookup
+  const $ = sel=>document.querySelector(sel);
+  const rootSel = $("#root"), octSel=$("#oct"),
+        intensity=$("#intensity"), bright=$("#bright"), reverb=$("#reverb"), sand=$("#sand"),
+        cluster=$("#cluster"), detune=$("#detune"), gliss=$("#gliss"),
+        scaleA=$("#scaleA"), scaleB=$("#scaleB"), blend=$("#blend"), density=$("#density"),
+        formantAmt=$("#formantAmt"), formantSpd=$("#formantSpd"),
+        startBtn=$("#startBtn"), stopBtn=$("#stopBtn"), holdBtn=$("#holdBtn");
+
+  // Fill scale selects
+  function fillScales(){
+    const names = Object.keys(SCALES);
+    for(const n of names){
+      const a = document.createElement("option"); a.textContent = n;
+      const b = document.createElement("option"); b.textContent = n;
+      scaleA.appendChild(a); scaleB.appendChild(b);
+    }
+    scaleA.value = state.scaleA; scaleB.value = state.scaleB;
+  }
+
+  // Compute target frequencies for a shimmer event
+  function chooseFreq(){
+    const r = noteIndex[state.root] + (12*(parseInt(state.oct)||3));
+    const baseMidi = 12 + r; // C0 offset
+    const a = SCALES[state.scaleA], b = SCALES[state.scaleB];
+    const useB = Math.random() < state.blend;
+    const scale = useB? b : a;
+    const deg = scale[(Math.random()*scale.length)|0];
+    const octaveJitter = (Math.random()<0.5?0:12);
+    const midi = baseMidi + deg + octaveJitter - 12; // keep mostly low/mid
+    return midiToFreq(midi);
+  }
+
+  let mixNode, lastSpawn = 0;
+
+  function tick(){
+    if(!running) return;
+    const now = ctx.currentTime;
+
+    // Voice density tied to intensity & density slider
+    const dens = 0.2 + state.density * state.intensity * 2.0; // voices/sec
+    const interval = 1/ dens;
+    if(now - lastSpawn > interval){
+      lastSpawn = now;
+      const f = chooseFreq();
+      const v = new ShimmerVoice(mixNode, f, {
+        dur: lerp(2.0, 7.0, Math.random()),
+        cluster: state.cluster,
+        detune: state.detune * (hold? 0.2:1.0),
+        gliss: state.gliss * (hold? 0.25:1.0)
+      });
+      activeVoices.add(v);
+      // Cleanup old voices
+      for(const vv of [...activeVoices]) if(!vv.alive) activeVoices.delete(vv);
+    }
+
+    // Formant morph
+    formantBus.t += state.formantSpd * 0.0025;
+    const t = formantBus.t;
+    const f1 = 300 + Math.sin(t*0.8)*80;
+    const f2 = 1200 + Math.sin(t*0.5 + 1.3)*220;
+    const f3 = 2400 + Math.sin(t*0.3 + 2.1)*350;
+    [formantBus.f1.frequency, formantBus.f2.frequency, formantBus.f3.frequency].forEach((p,i)=>{
+      const target = [f1,f2,f3][i];
+      p.setTargetAtTime(target, now, 0.25);
+      const gain = [8,6,4][i] * state.formantAmt; // peaking gain in dB
+      p.gain.setTargetAtTime(gain, now, 0.25);
+    });
+
+    // Sand and tone
+    sandGain.gain.setTargetAtTime(state.sand * (0.1 + state.intensity*0.9), now, 0.2);
+    lowpass.frequency.setTargetAtTime(state.brightness, now, 0.25);
+    reverbSend.gain.setTargetAtTime(state.reverb*0.9, now, 0.3);
+
+    rafId = requestAnimationFrame(tick);
+  }
+
+  let rafId=null; const activeVoices = new Set();
+
+  function start(){
+    if(running) return; running = true;
+    if(!ctx || ctx.state!=="running"){ const g = setup(); mixNode = g.mix; }
+    ctx.resume();
+    lastSpawn = ctx.currentTime;
+    tick();
+  }
+  function stop(){ running=false; cancelAnimationFrame(rafId); rafId=null; activeVoices.forEach(v=>v.dispose()); activeVoices.clear(); }
+
+  // Wire UI
+  fillScales();
+  startBtn.onclick = ()=>start();
+  stopBtn.onclick = ()=>stop();
+  holdBtn.onclick = ()=>{ hold=!hold; holdBtn.classList.toggle('primary', hold); holdBtn.textContent = hold? 'Holding (release to drift)':'Hold (freeze drift)'; };
+
+  rootSel.oninput = e=>state.root = e.target.value;
+  octSel.oninput = e=>state.oct = e.target.value;
+  intensity.oninput = e=> state.intensity = +e.target.value;
+  bright.oninput = e=> state.brightness = +e.target.value;
+  reverb.oninput = e=> state.reverb = +e.target.value;
+  sand.oninput = e=> state.sand = +e.target.value;
+  cluster.oninput = e=> state.cluster = +e.target.value|0;
+  detune.oninput = e=> state.detune = +e.target.value;
+  gliss.oninput = e=> state.gliss = +e.target.value;
+  blend.oninput = e=> state.blend = +e.target.value;
+  density.oninput = e=> state.density = +e.target.value;
+  formantAmt.oninput = e=> state.formantAmt = +e.target.value;
+  formantSpd.oninput = e=> state.formantSpd = +e.target.value;
+
+  // Mobile: resume audio on first touch
+  document.addEventListener('touchend', ()=>{ if(ctx && ctx.state!=="running") ctx.resume(); }, {passive:true});
+})();
+</script></body>
+</html>
