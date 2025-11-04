@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Porch Logic — Drone Choir (4-Voice)</title>
+<style>
+	:root{
+		--bg:#0b0f14;--fg:#e8eef6;--mut:#9fb0c8;--card:#111723;--stroke:#1e2a3a;--accent:#7cc;
+	}
+	html,body{height:100%}
+	body{margin:0;background:radial-gradient(1200px 600px at 10% -10%,#122034 0%,#0b0f14 40%,#070a0f 100%);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto}
+	.wrap{max-width:980px;margin:0 auto;padding:20px}
+	h1{margin:4px 0 12px;font-size:20px;font-weight:650;letter-spacing:.2px}
+	.sub{color:var(--mut);margin:-6px 0 18px}
+	.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+	@media (max-width:840px){.grid{grid-template-columns:1fr}}
+	.card{background:linear-gradient(180deg,#121a27,#0f1520);border:1px solid var(--stroke);border-radius:14px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+	.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+	.btn{appearance:none;border:1px solid var(--stroke);background:#0f1622;color:var(--fg);padding:10px 12px;border-radius:12px;cursor:pointer;transition:.15s transform,.15s background,.15s border-color;font-weight:600}
+	.btn:active{transform:translateY(1px)}
+	.btn.primary{background:linear-gradient(180deg,#0f2a36,#0b202b);border-color:#234a5e}
+	.btn.on{outline:2px solid #5bd;box-shadow:0 0 0 3px rgba(91,221,255,.12) inset}
+	.bank{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:10px}
+	.label{font-size:12px;color:var(--mut)}
+	.range{appearance:none;width:100%;height:10px;border-radius:10px;background:linear-gradient(90deg,#153044,#0d1b29);border:1px solid var(--stroke);outline:none}
+	.range::-webkit-slider-thumb{appearance:none;width:24px;height:24px;border-radius:50%;background:linear-gradient(180deg,#aee,#7cc);border:0;box-shadow:0 3px 10px rgba(0,0,0,.45)}
+	.small{font-size:12px;color:var(--mut)}
+	.kv{display:grid;grid-template-columns:auto 1fr;gap:10px 14px;align-items:center}
+	.badge{display:inline-block;font-size:11px;padding:3px 8px;border:1px solid var(--stroke);border-radius:999px;background:#0f1622;color:var(--mut)}
+	.footer{margin-top:8px;color:#6f829e;font-size:12px}
+	.hr{height:1px;background:linear-gradient(90deg,transparent,#1b2b3d 40%,#1b2b3d 60%,transparent);margin:12px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+	<h1>Drone Choir — 4 Voices</h1>
+	<div class="sub">Start → choose a chord → set transpose. Built with WebAudio (chorus + space + tape drift) for a film-score-grade pad.</div>
+
+	<div class="grid">
+		<div class="card">
+			<div class="row">
+				<button id="startBtn" class="btn primary">Start</button>
+				<button id="stopBtn" class="btn">Stop</button>
+				<span id="status" class="badge">stopped</span>
+			</div>
+
+			<div class="hr"></div>
+
+			<div>
+				<div class="label">Transpose (semitones): <span id="transposeVal" class="badge">0</span></div>
+				<input id="transpose" class="range" type="range" min="-12" max="12" step="1" value="0" />
+			</div>
+
+			<div class="hr"></div>
+
+			<div>
+				<div class="label">Chord palette</div>
+				<div id="chordBank" class="bank"></div>
+			</div>
+		</div>
+
+		<div class="card">
+			<div class="label">Engine</div>
+			<div class="kv">
+				<div>Output</div><div><span id="meter" class="badge">–∞ dB</span></div>
+				<div>Chord</div><div><span id="chordName" class="badge">—</span></div>
+				<div>Base key</div><div><span id="keyName" class="badge">C</span> <span class="small">(transpose moves this)</span></div>
+				<div>Lushness</div><div><span class="badge">multiosc + chorus + FDN reverb + tape drift</span></div>
+			</div>
+			<div class="footer">Tip: for deeper body, try <b>sus2</b> or <b>add9</b>. For air, <b>maj7</b>. For grit, nudge phone volume up a touch.</div>
+		</div>
+	</div>
+</div>
+
+<script>
+/*
+	Drone Choir — 4 voices
+	Design goals:
+	- Cinematic warmth without external samples.
+	- 4 sustained voices (root + color tones) with subtle divergence.
+	- Per-voice rich timbre: tri-saw blend + gentle fold + ladder-style LPF.
+	- Movement: slow random drift + wow/flutter micro vibrato.
+	- Spaciousness: 3-line stereo chorus + FDN reverb with diffusion.
+	- Headroom and softclip to avoid harshness.
+
+	Everything is self-contained and mobile-friendly (requires Start tap).
+*/
+
+// ---------- Musical helpers ----------
+const A4 = 440;
+function midiToHz(m){ return 440 * Math.pow(2,(m-69)/12); }
+const NOTE_NAMES = ["C","C♯","D","E♭","E","F","F♯","G","A♭","A","B♭","B"];
+function noteNameFromMidi(m){
+	const n = (m+1200)%12;
+	return NOTE_NAMES[n] + Math.floor((m-12)/12 - 0); // octave not shown, keep simple
+}
+
+// Chord intervals (semitones from root). 4 voices max; pick tasteful 4-note sets.
+const CHORDS = [
+	{ name:"Power (5)",   iv:[0,7,19,24] },                 // root, 5th, 12th+5th, two octaves
+	{ name:"Major",       iv:[0,4,7,14] },                  // R 3 5 8
+	{ name:"Minor",       iv:[0,3,7,15] },                  // R b3 5 9
+	{ name:"Sus2",        iv:[0,2,7,14] },
+	{ name:"Sus4",        iv:[0,5,7,12] },
+	{ name:"Maj7",        iv:[0,4,7,11] },
+	{ name:"Min7",        iv:[0,3,7,10] },
+	{ name:"Add9",        iv:[0,4,7,14] },
+	{ name:"Quartal",     iv:[0,5,10,17] },                 // stacked fourths for modern air
+	{ name:"Minor 6/9",   iv:[0,3,9,14] },
+];
+
+// ---------- Audio graph ----------
+let ctx, master, softClipIn, softClipper, outLim, meterNode, meterJS;
+let global = { started:false, baseMidi:60, transpose:0, chord:CHORDS[0], voices:[], chorus:null, reverb:null, keyName:"C" };
+
+// Build the full engine
+function buildAudio(){
+	ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint:"interactive" });
+
+	// Master path
+	master     = ctx.createGain();     master.gain.value = 0.85; // generous headroom
+	softClipIn = ctx.createGain();     softClipIn.gain.value = 1.0;
+
+	// Gentle waveshaper for analog-ish glue
+	softClipper = ctx.createWaveShaper(); softClipper.curve = makeSoftClipCurve(0.6, 2048);
+
+	// Output limiter (lookahead-ish via fast comp)
+	outLim = ctx.createDynamicsCompressor();
+	outLim.attack.value = 0.003; outLim.release.value = 0.08;
+	outLim.threshold.value = -8; outLim.knee.value = 12; outLim.ratio.value = 8;
+
+	// Meter
+	meterNode = ctx.createAnalyser(); meterNode.fftSize = 2048;
+	meterJS = { arr:new Float32Array(meterNode.fftSize) };
+
+	// FX: Chorus → Reverb
+	const chorus = buildChorus();
+	const reverb = buildFDNReverb();
+
+	// Wire
+	master.connect(softClipIn);
+	softClipIn.connect(softClipper);
+	softClipper.connect(chorus.input);
+	chorus.output.connect(reverb.input);
+	reverb.output.connect(outLim);
+	outLim.connect(meterNode);
+	outLim.connect(ctx.destination);
+
+	global.chorus = chorus;
+	global.reverb = reverb;
+
+	// Prewarm voices
+	spawnVoices();
+	updateAllFrequencies();
+}
+
+function makeSoftClipCurve(amount=0.6, n=1024){
+	const curve = new Float32Array(n);
+	for(let i=0;i<n;i++){
+		const x = (i/(n-1))*2-1;
+		curve[i] = Math.tanh(x*(1+amount*2));
+	}
+	return curve;
+}
+
+// Chorus: 3 delay lines, LFO-modulated, stereo spread
+function buildChorus(){
+	const input  = ctx.createGain(); input.gain.value = 1;
+	const splitter = ctx.createChannelSplitter(2);
+	const merger   = ctx.createChannelMerger(2);
+	const wet = ctx.createGain(); wet.gain.value = 0.35;
+	const dry = ctx.createGain(); dry.gain.value = 0.85;
+
+	const lines = [ // depth(ms), baseDelay(ms), rate(Hz), pan
+		{ depth:8,  base:14, rate:0.12, pan:-0.7 },
+		{ depth:6,  base:11, rate:0.09, pan: 0.0 },
+		{ depth:10, base:17, rate:0.16, pan:+0.7 },
+	];
+	const panners = lines.map(x=>new StereoPannerNode(ctx,{ pan:x.pan }));
+	const lfos = lines.map(x=>ctx.createOscillator());
+	const lfoG = lines.map(x=>ctx.createGain());
+	const delays = lines.map(x=>ctx.createDelay(0.5));
+	const wetG = lines.map(()=>ctx.createGain());
+
+	input.connect(dry);
+	dry.connect(merger,0,0); dry.connect(merger,0,1);
+
+	input.connect(splitter);
+	for(let i=0;i<lines.length;i++){
+		const chPick = i%2;
+		splitter.connect(panners[i], chPick);
+		panners[i].connect(delays[i]);
+		delays[i].connect(wetG[i]); wetG[i].gain.value = 0.7;
+		wetG[i].connect(merger,0, chPick);
+
+		lfos[i].type = "sine";
+		lfos[i].frequency.value = lines[i].rate;
+		lfoG[i].gain.value = lines[i].depth/1000;
+		lfos[i].connect(lfoG[i]);
+		lfoG[i].connect(delays[i].delayTime);
+		delays[i].delayTime.value = lines[i].base/1000;
+		lfos[i].start();
+	}
+
+	const output = ctx.createGain();
+	merger.connect(wet);
+	wet.connect(output);
+	dry.connect(output);
+
+	return { input, output };
+}
+
+// FDN reverb: 4 delay lines with feedback matrix + gentle damping/allpass diffusion
+function buildFDNReverb(){
+	const input = ctx.createGain(); input.gain.value = 0.7;
+	const output = ctx.createGain(); output.gain.value = 0.46;
+
+	const wetMix = ctx.createGain(); wetMix.gain.value = 0.9;
+	const dryTap = ctx.createGain(); dryTap.gain.value = 0.0; // fully wet in this send
+
+	const N = 4;
+	const delays = [];
+	const gainsIn = [];
+	const gainsOut = [];
+	const damp = [];
+	const ap = [];
+
+	// Delay times (prime-ish) for diffusion
+	const timesMs = [ 29, 37, 41, 53 ];
+	for(let i=0;i<N;i++){
+		delays[i] = ctx.createDelay(1.0);
+		delays[i].delayTime.value = timesMs[i]/1000;
+		gainsIn[i]  = ctx.createGain();  gainsIn[i].gain.value = 0.72;
+		gainsOut[i] = ctx.createGain();  gainsOut[i].gain.value = 0.72;
+
+		// damping (lowpass in feedback)
+		damp[i] = ctx.createBiquadFilter(); damp[i].type="lowpass"; damp[i].frequency.value = 7000; damp[i].Q.value = 0.3;
+
+		// a small allpass at input for pre-diffusion
+		ap[i] = buildAllpass(0.003 + i*0.0015, 0.6);
+
+		// wire input -> allpass -> inGain -> delay -> damp -> outGain
+		input.connect(ap[i].input);
+		ap[i].output.connect(gainsIn[i]);
+		gainsIn[i].connect(delays[i]);
+		delays[i].connect(damp[i]);
+		damp[i].connect(gainsOut[i]);
+		gainsOut[i].connect(wetMix);
+	}
+
+	// Feedback matrix (Hadamard-ish)
+	function connectFeedback(i,j,sign){
+		const g = ctx.createGain(); g.gain.value = 0.25 * sign; // scale for stability
+		gainsOut[i].connect(g);
+		g.connect(gainsIn[j]);
+	}
+	const signs = [
+		[+1,+1,+1,+1],
+		[+1,-1,+1,-1],
+		[+1,+1,-1,-1],
+		[+1,-1,-1,+1],
+	];
+	for(let i=0;i<4;i++) for(let j=0;j<4;j++) connectFeedback(i,j,signs[i][j]);
+
+	const tone = ctx.createBiquadFilter(); tone.type="lowpass"; tone.frequency.value = 8500;
+	wetMix.connect(tone);
+	tone.connect(output);
+
+	return { input, output };
+}
+function buildAllpass(delaySec, gainAmt){
+	const input = ctx.createGain(), output = ctx.createGain();
+	const d = ctx.createDelay(1.0); d.delayTime.value = delaySec;
+	const g1 = ctx.createGain(); g1.gain.value = gainAmt;
+	const g2 = ctx.createGain(); g2.gain.value = -gainAmt;
+
+	// Structure: y = x * (-g) + delay( x + y * g )
+	input.connect(d);
+	input.connect(g2); g2.connect(output);
+	d.connect(g1);
+	g1.connect(output);
+	output.connect(g1); // feedback path
+	return { input, output };
+}
+
+// ---------- Voice (per sustained pitch) ----------
+function makeVoice(){
+	// Each voice = blend of 3 partials (two detuned saws + triangle sub), soft fold, ladder-ish LPF
+	const gain = ctx.createGain(); gain.gain.value = 0.0;
+	const color = ctx.createGain(); color.gain.value = 0.9;
+
+	// Tone shaper
+	const pre = ctx.createGain(); pre.gain.value = 0.8;
+
+	// Gentle “ladder style” lowpass using two cascaded biquads
+	const lpf1 = ctx.createBiquadFilter(); lpf1.type="lowpass"; lpf1.frequency.value=2400; lpf1.Q.value=0.6;
+	const lpf2 = ctx.createBiquadFilter(); lpf2.type="lowpass"; lpf2.frequency.value=2300; lpf2.Q.value=0.5;
+
+	// Fold (drive before lowpass)
+	const drive = ctx.createWaveShaper(); drive.curve = makeSoftClipCurve(0.35, 1024);
+
+	// Partial oscillators
+	const oscA = ctx.createOscillator(); oscA.type="sawtooth";
+	const oscB = ctx.createOscillator(); oscB.type="sawtooth";
+	const oscC = ctx.createOscillator(); oscC.type="triangle";
+
+	const gA = ctx.createGain(); gA.gain.value=0.55;
+	const gB = ctx.createGain(); gB.gain.value=0.38;
+	const gC = ctx.createGain(); gC.gain.value=0.25;
+
+	// Slow drift LFO + micro wow/flutter
+	const lfo = ctx.createOscillator(); lfo.frequency.value = 0.035 + Math.random()*0.02; // very slow
+	const lfoG = ctx.createGain(); lfoG.gain.value = 4 + Math.random()*3; // cents
+	const wow = ctx.createOscillator(); wow.type="sine"; wow.frequency.value = 5.3 + Math.random()*0.8;
+	const wowG = ctx.createGain(); wowG.gain.value = 0.9; // cents
+
+	const centsToHz = v => v/1200;
+	const detuneTo = (osc, baseHz) => (cents)=> osc.frequency.setTargetAtTime(baseHz*Math.pow(2,cents/1200), ctx.currentTime, 0.25);
+
+	// Mixer
+	oscA.connect(gA); oscB.connect(gB); oscC.connect(gC);
+	gA.connect(pre); gB.connect(pre); gC.connect(pre);
+	pre.connect(drive); drive.connect(lpf1); lpf1.connect(lpf2); lpf2.connect(color); color.connect(gain);
+
+	// Outputs go to master (FX are on master bus)
+	gain.connect(master);
+
+	// Detune mapping (via AudioParam detune in cents)
+	lfo.connect(lfoG); lfoG.connect(oscA.detune);
+	lfo.connect(lfoG); lfoG.connect(oscB.detune);
+	wow.connect(wowG); wowG.connect(oscA.detune);
+	wow.connect(wowG); wowG.connect(oscB.detune);
+
+	// Static stereo placement per voice (subtle, width from chorus/reverb)
+	const pan = new StereoPannerNode(ctx,{ pan: (Math.random()*1.6-0.8) });
+	color.disconnect(); color.connect(pan).connect(gain);
+
+	// Start oscillators
+	oscA.start(); oscB.start(); oscC.start();
+	lfo.start();  wow.start();
+
+	return {
+		gain, oscA, oscB, oscC, gA, gB, gC, lpf1, lpf2,
+		setFreq(hz){
+			// slight per-osc detunes
+			oscA.frequency.setTargetAtTime(hz*(1+ ( 7)/1200*Math.log(2)), ctx.currentTime, 0.25);
+			oscB.frequency.setTargetAtTime(hz*(1+ (-5)/1200*Math.log(2)), ctx.currentTime, 0.25);
+			oscC.frequency.setTargetAtTime(hz*0.5, ctx.currentTime, 0.25); // supportive sub
+			// brighten a hair with pitch, darken on low notes
+			const f = Math.min(5000, Math.max(900, hz*2.5));
+			lpf1.frequency.setTargetAtTime(f, ctx.currentTime, 0.5);
+			lpf2.frequency.setTargetAtTime(f*0.92, ctx.currentTime, 0.6);
+		},
+		fadeTo(v, t=0.8){ this.gain.gain.setTargetAtTime(v, ctx.currentTime, Math.max(0.01,t)); }
+	};
+}
+
+// Spawn 4 voices
+function spawnVoices(){
+	global.voices.forEach(v=>v.fadeTo(0,0.1));
+	global.voices = [ makeVoice(), makeVoice(), makeVoice(), makeVoice() ];
+}
+
+// Update frequencies for chosen chord + transpose
+function updateAllFrequencies(){
+	const base = global.baseMidi + global.transpose;
+	const intervals = global.chord.iv.slice(0,4);
+	for(let i=0;i<4;i++){
+		const m = base + intervals[i];
+		const hz = midiToHz(m);
+		global.voices[i].setFreq(hz);
+		// keep all voices audible
+		global.voices[i].fadeTo(0.23 + (i===0?0.05:0), 0.8);
+	}
+	document.getElementById('keyName').textContent = NOTE_NAMES[(base%12+12)%12];
+	document.getElementById('chordName').textContent = global.chord.name;
+}
+
+// ---------- UI ----------
+function buildChordBank(){
+	const bank = document.getElementById('chordBank');
+	CHORDS.forEach((ch, idx)=>{
+		const b = document.createElement('button');
+		b.textContent = ch.name;
+		b.className = 'btn';
+		b.onclick = ()=>{
+			document.querySelectorAll('#chordBank .btn').forEach(x=>x.classList.remove('on'));
+			b.classList.add('on');
+			global.chord = ch;
+			if(global.started) updateAllFrequencies();
+		};
+		if(idx===0) b.classList.add('on');
+		bank.appendChild(b);
+	});
+}
+function wireUI(){
+	const startBtn = document.getElementById('startBtn');
+	const stopBtn  = document.getElementById('stopBtn');
+	const transpose = document.getElementById('transpose');
+	const tVal = document.getElementById('transposeVal');
+	const status = document.getElementById('status');
+
+	startBtn.addEventListener('click', async ()=>{
+		if(!ctx) buildAudio();
+		if(ctx.state !== 'running') await ctx.resume();
+		global.started = true;
+		updateAllFrequencies();
+		status.textContent = 'playing';
+		status.style.background = '#0a2b2b';
+		startBtn.classList.add('on');
+	});
+
+	stopBtn.addEventListener('click', ()=>{
+		if(!ctx) return;
+		global.started = false;
+		global.voices.forEach(v=>v.fadeTo(0,0.2));
+		status.textContent = 'stopped';
+		document.getElementById('meter').textContent = '–∞ dB';
+		document.getElementById('startBtn').classList.remove('on');
+	});
+
+	transpose.addEventListener('input', ()=>{
+		global.transpose = parseInt(transpose.value,10);
+		tVal.textContent = global.transpose;
+		if(global.started) updateAllFrequencies();
+	});
+}
+
+// ---------- Meter loop ----------
+function startMeter(){
+	function loop(){
+		if(ctx && global.started){
+			meterNode.getFloatTimeDomainData(meterJS.arr);
+			let sum=0; for(let i=0;i<meterJS.arr.length;i++){ sum += meterJS.arr[i]*meterJS.arr[i]; }
+			const rms = Math.sqrt(sum/meterJS.arr.length);
+			const db = 20*Math.log10(rms || 1e-8);
+			document.getElementById('meter').textContent = (db<-60?'–∞':db.toFixed(1)+' dB');
+		}
+		requestAnimationFrame(loop);
+	}
+	loop();
+}
+
+// ---------- Boot ----------
+buildChordBank();
+wireUI();
+startMeter();
+</script>
+</body>
+</html>
