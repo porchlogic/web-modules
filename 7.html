@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Drone Choir — Nudge Compass</title>
+<style>
+:root{--bg:#0b0f14;--fg:#e8eef6;--mut:#97a7c0;--card:#111723;--stroke:#1c2a3b;--accent:#7cc}
+html,body{height:100%}
+body{margin:0;background:radial-gradient(1200px 600px at 10% -10%,#122034 0%,#0b0f14 40%,#070a0f 100%);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto}
+.wrap{max-width:980px;margin:0 auto;padding:18px}
+h1{margin:4px 0 8px;font-size:20px;font-weight:650}
+.sub{color:var(--mut);margin:-4px 0 14px}
+.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:linear-gradient(180deg,#121a27,#0f1520);border:1px solid var(--stroke);border-radius:14px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.btn{appearance:none;border:1px solid var(--stroke);background:#0f1622;color:var(--fg);padding:10px 12px;border-radius:12px;cursor:pointer;font-weight:600;transition:.15s transform,.15s background,.15s border-color}
+.btn.primary{background:linear-gradient(180deg,#0f2a36,#0b202b);border-color:#234a5e}
+.btn:active{transform:translateY(1px)}
+.badge{display:inline-block;font-size:11px;padding:3px 8px;border:1px solid var(--stroke);border-radius:999px;background:#0f1622;color:var(--mut)}
+.hr{height:1px;background:linear-gradient(90deg,transparent,#1b2b3d 40%,#1b2b3d 60%,transparent);margin:12px 0}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:10px 14px;align-items:center}
+.small{font-size:12px;color:var(--mut)}
+
+.compass{position:relative;aspect-ratio:1/1;width:100%;max-width:520px;margin:8px auto 0;background:conic-gradient(from -90deg,#15263a 0 90deg,#122235 90 180,#0f1c2b 180 270,#101f32 270 360);border:1px solid var(--stroke);border-radius:18px;box-shadow:inset 0 0 60px rgba(0,0,0,.35),0 10px 30px rgba(0,0,0,.25)}
+.ring{position:absolute;inset:10px;border-radius:50%;border:1px dashed #24415e;box-shadow:inset 0 0 120px rgba(0,0,0,.3)}
+.ring:before,.ring:after{content:"";position:absolute;left:50%;top:50%;translate:-50% -50%;border-radius:50%;border:1px dashed #1f3650;opacity:.8}
+.ring:before{width:66%;height:66%}
+.ring:after{width:33%;height:33%}
+.centerDot{position:absolute;left:50%;top:50%;translate:-50% -50%;width:10px;height:10px;border-radius:50%;background:#5bd;box-shadow:0 0 0 6px rgba(91,221,255,.12)}
+.labels{position:absolute;inset:0;font-size:12px;color:#b8cbe4;font-weight:700;pointer-events:none;text-shadow:0 2px 6px rgba(0,0,0,.5)}
+.lab{position:absolute}
+.lab.n{left:50%;top:6px;translate:-50% 0}
+.lab.s{left:50%;bottom:6px;translate:-50% 0}
+.lab.e{right:6px;top:50%;translate:0 -50%}
+.lab.w{left:6px;top:50%;translate:0 -50%}
+.lab.ne{right:10px;top:10px}
+.lab.se{right:10px;bottom:10px}
+.lab.sw{left:10px;bottom:10px}
+.lab.nw{left:10px;top:10px}
+.tap{position:absolute;inset:0}
+.spark{position:absolute;width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#ccffff,#7cc);opacity:.9;pointer-events:none;filter:drop-shadow(0 6px 12px rgba(0,0,0,.45));animation:pop .7s ease-out}
+@keyframes pop{0%{transform:scale(.6);opacity:.0}25%{opacity:.95}100%{transform:scale(1);opacity:0}}
+
+.legend{margin-top:8px;color:#b8cbe4;font-size:12px;opacity:.9}
+</style>
+</head>
+<body>
+<div class="wrap">
+	<h1>Drone Choir — Nudge Compass</h1>
+	<div class="sub">Tap on the circle to “nudge” harmony. Angle chooses the musical direction; radius chooses intensity (voicing → color → root motion). Keep tapping a direction to walk further.</div>
+
+	<div class="grid">
+		<div class="card">
+			<div class="row">
+				<button id="startBtn" class="btn primary">Start</button>
+				<button id="stopBtn" class="btn">Stop</button>
+				<span id="status" class="badge">stopped</span>
+			</div>
+			<div class="hr"></div>
+
+			<div class="compass" id="compass">
+				<div class="ring"></div>
+				<div class="centerDot"></div>
+				<div class="labels">
+					<div class="lab n">N • airy ↑ (add9 / maj7)</div>
+					<div class="lab e">E • open → (sus/quartal)</div>
+					<div class="lab s">S • dark ↓ (min7 / 6/9)</div>
+					<div class="lab w">W • warm ← (triad/power)</div>
+					<div class="lab ne">NE • bright + open</div>
+					<div class="lab se">SE • moody + open</div>
+					<div class="lab sw">SW • grounded + dark</div>
+					<div class="lab nw">NW • warm + airy</div>
+				</div>
+				<div class="tap" id="tap"></div>
+			</div>
+			<div class="legend">Rings: inner = voicing, middle = color/extension, outer = root motion (circle-of-fifths flavored)</div>
+		</div>
+
+		<div class="card">
+			<div class="label">State</div>
+			<div class="kv">
+				<div>Chord</div><div><span id="chordName" class="badge">—</span></div>
+				<div>Notes</div><div><span id="notes" class="badge">—</span></div>
+				<div>Key center</div><div><span id="keyName" class="badge">C</span></div>
+				<div>Output</div><div><span id="meter" class="badge">–∞ dB</span></div>
+				<div>Engine</div><div><span class="badge">tri-saw blend • fold • ladder LPF • chorus • FDN</span></div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<script>
+/* ===== Musical helpers & representations ===== */
+const NOTE_NAMES=["C","C♯","D","E♭","E","F","F♯","G","A♭","A","B♭","B"];
+const wrap12 = n => (n%12+12)%12;
+function midiToHz(m){return 440*Math.pow(2,(m-69)/12)}
+function namePitch(m){return NOTE_NAMES[wrap12(m)]}
+
+const QUALS = ["maj","min","sus2","sus4","quartal","power"]; // coarse “texture”
+function pcSetFromState(state){
+	// Build a 4-note voicing from coarse quality + extensions.
+	// Root is state.root (MIDI). We voice for minimal motion vs previous voicing later.
+	const r = state.root;
+	let iv = [];
+	switch(state.qual){
+		case "maj":    iv = [0,4,7]; break;
+		case "min":    iv = [0,3,7]; break;
+		case "sus2":   iv = [0,2,7]; break;
+		case "sus4":   iv = [0,5,7]; break;
+		case "quartal":iv = [0,5,10]; break;
+		case "power":  iv = [0,7,19]; break;
+	}
+	// extensions
+	if(state.add7===1 && !iv.includes(11)) iv.push(11);       // maj7
+	if(state.add7===-1 && !iv.includes(10)) iv.push(10);      // min7
+	if(state.add9 && !iv.includes(14)) iv.push(14);           // add9
+	if(state.add6 && !iv.includes(9)) iv.push(9);             // add6 (6/9 when 9 present)
+	// ensure 4 notes: pick tasteful subset/top-up with octaves
+	iv.sort((a,b)=>a-b);
+	if(iv.length>4) iv = [iv[0], iv[1], iv[2], iv[iv.length-1]];
+	if(iv.length<4){
+		while(iv.length<4){ iv.push(iv[iv.length-1]+12); }
+	}
+	// map to MIDI near a register window, then apply inversion/voicing spread
+	const baseOct = 48; // C3 region
+	let midi = iv.map(semi => r + semi + (baseOct - (r%12)));
+	// compact to within ~2 octaves
+	midi = midi.map((m,i)=> i===0?m : (m<midi[0]?m+12:m));
+	while(midi[midi.length-1]-midi[0] > 24){
+		for(let i=1;i<midi.length;i++){ midi[i]-=12; }
+		midi.sort((a,b)=>a-b);
+	}
+	// apply inversion
+	for(let i=0;i<state.inv;i++){ midi[0]+=12; midi.sort((a,b)=>a-b); }
+	// apply spread
+	if(state.spread>0){
+		midi[0]-=12*state.spread;
+		midi[midi.length-1]+=12*state.spread;
+	}
+	return midi;
+}
+
+/* ===== Directional “nudge” operators =====
+   Each tap generates a delta on the chord state depending on angle/radius.
+   Inner ring: voicing tweaks (inversion/spread).
+   Middle ring: color (extensions/quality drift).
+   Outer ring: root motion along circle-of-fifths flavored vector + color. */
+function applyNudge(state, angleRad, radiusNorm){
+	const deg = (angleRad*180/Math.PI+360)%360;
+	const r = Math.min(1, Math.max(0, radiusNorm));
+
+	// We blend two ideas:
+	// 1) Sector chooses musical direction vector (N/E/S/W and diagonals).
+	// 2) Radius gates intensity tier.
+	let dir;
+	if     (deg>=337.5||deg<22.5)  dir="E";
+	else if(deg<67.5)              dir="NE";
+	else if(deg<112.5)             dir="N";
+	else if(deg<157.5)             dir="NW";
+	else if(deg<202.5)             dir="W";
+	else if(deg<247.5)             dir="SW";
+	else if(deg<292.5)             dir="S";
+	else                           dir="SE";
+
+	const tier = r<.33? "voicing" : (r<.66? "color" : "motion");
+
+	// Clone state
+	const next = JSON.parse(JSON.stringify(state));
+
+	function toward(target){
+		// gently steer quality toward target
+		const order = ["power","sus4","sus2","min","maj","quartal"]; // path across textures
+		const curI = order.indexOf(next.qual);
+		const tarI = order.indexOf(target);
+		if(curI<tarI) next.qual = order[curI+1];
+		else if(curI>tarI) next.qual = order[curI-1];
+	}
+	function toggleMajorMinor(toMinor){
+		next.qual = toMinor? (next.qual==="maj"?"min":next.qual) : (next.qual==="min"?"maj":next.qual);
+	}
+	function add(ext){ next[ext] = true; }
+	function drop(ext){ next[ext] = false; }
+	function set7(v){ next.add7 = v; } // 1=maj7, -1=min7, 0=none
+	function bumpRoot(semi){ next.root += semi; }
+	function cycleFifths(step){ // +1 = up a fifth, -1 = down a fifth
+		// circle-of-fifths steps are +/-7 semitones
+		next.root += step*7;
+	}
+
+	// Apply per tier
+	if(tier==="voicing"){
+		// Inner ring: voicing morph — small, expressive
+		switch(dir){
+			case "N":   set7(1); next.add9 = true; break;            // airy
+			case "S":   set7(-1); drop("add9"); next.add6 = true; break; // darker / 6/7
+			case "E":   toward("sus2"); next.spread = Math.min(1, next.spread+0.5); break; // open
+			case "W":   toward("power"); next.spread = Math.max(0, next.spread-0.5); break; // warm/compact
+			case "NE":  toward("sus2"); set7(1); add("add9"); break; // bright + open
+			case "NW":  toward("maj");  set7(1); next.add6=true; break; // warm + airy
+			case "SE":  toggleMajorMinor(true); set7(-1); add("add9"); break; // moody + open
+			case "SW":  toggleMajorMinor(true); set7(-1); drop("add9"); toward("sus4"); break; // grounded + dark
+		}
+		// small inversion shuffle for motion
+		next.inv = (next.inv+1)%4;
+	}
+	else if(tier==="color"){
+		// Middle ring: stronger color drift
+		switch(dir){
+			case "N":   next.qual="maj"; set7(1); next.add9=true; break;
+			case "S":   next.qual="min"; set7(-1); next.add6=true; next.add9=false; break;
+			case "E":   next.qual="quartal"; next.add9=true; break;
+			case "W":   next.qual="power"; set7(0); next.add9=false; next.add6=false; break;
+			case "NE":  next.qual="sus2"; set7(1); next.add9=true; break;
+			case "NW":  next.qual="maj"; set7(1); next.add6=true; break;
+			case "SE":  next.qual="min"; set7(-1); next.add9=true; break;
+			case "SW":  next.qual="sus4"; set7(-1); next.add6=true; break;
+		}
+		// voicing: modest widen
+		next.spread = Math.min(1, (next.spread||0)+0.5);
+	}
+	else {
+		// Outer ring: root motion along circle-of-fifths flavored by sector + color changes
+		switch(dir){
+			case "N": cycleFifths(+1); next.qual="maj"; set7(1); next.add9=true; break; // brighter, up a fifth
+			case "S": cycleFifths(-1); next.qual="min"; set7(-1); next.add6=true; break; // darker, down a fifth
+			case "E": cycleFifths(+2); next.qual="quartal"; next.add9=true; break;      // two fifths = +14 st
+			case "W": cycleFifths(-2); next.qual="power"; set7(0); next.add9=false; break;
+			case "NE":cycleFifths(+1); next.qual="sus2"; set7(1); next.add9=true; break;
+			case "NW":cycleFifths(+1); next.qual="maj"; set7(1); next.add6=true; break;
+			case "SE":cycleFifths(-1); next.qual="min"; set7(-1); next.add9=true; break;
+			case "SW":cycleFifths(-1); next.qual="sus4"; set7(-1); next.add6=true; break;
+		}
+		// slight inversion reset after leaps
+		next.inv = 1;
+		// keep key near usable register
+		if(next.root<36) next.root+=12;
+		if(next.root>72) next.root-=12;
+	}
+	return next;
+}
+
+/* ===== State & minimal voice-leading ===== */
+let prevVoicing = null;
+function realizeVoicing(nextState){
+	let midi = pcSetFromState(nextState);
+	// Minimal movement vs prev
+	if(prevVoicing){
+		// try small octave shuffles to reduce distance
+		let best = midi, bestSum = 1e9;
+		const variants = [];
+		for(const a of [0,12,-12]){
+			for(const b of [0,12,-12]){
+				for(const c of [0,12,-12]){
+					for(const d of [0,12,-12]){
+						variants.push([midi[0]+a,midi[1]+b,midi[2]+c,midi[3]+d].sort((x,y)=>x-y));
+					}
+				}
+			}
+		}
+		for(const v of variants){
+			const sum = v.reduce((acc,vi,i)=>acc+Math.abs(vi-prevVoicing[i]),0);
+			if(sum<bestSum){ bestSum=sum; best=v; }
+		}
+		midi = best;
+	}
+	prevVoicing = midi.slice();
+	return midi;
+}
+
+function labelFromState(s){
+	const bits=[];
+	bits.push(s.qual);
+	if(s.add7===1) bits.push("maj7");
+	if(s.add7===-1) bits.push("min7");
+	if(s.add6) bits.push("6");
+	if(s.add9) bits.push("add9");
+	return bits.join(" ").replace(/\s+/g," ").trim();
+}
+
+/* ===== Audio engine (same lush chain as before) ===== */
+let ctx, master, outLim, meterNode, meterBuf, chorus, reverb;
+let voices=[];
+function makeSoftClipCurve(amount=0.6,n=1024){
+	const c=new Float32Array(n);
+	for(let i=0;i<n;i++){const x=(i/(n-1))*2-1;c[i]=Math.tanh(x*(1+amount*2));}
+	return c;
+}
+function buildChorus(ctx){
+	const input=ctx.createGain(), output=ctx.createGain();
+	const wet=ctx.createGain(); wet.gain.value=.35;
+	const dry=ctx.createGain(); dry.gain.value=.85;
+	const merger=ctx.createChannelMerger(2);
+	const lines=[{d:8,b:14,r:.12,p:-.7},{d:6,b:11,r:.09,p:0},{d:10,b:17,r:.16,p:.7}];
+	lines.forEach((L,i)=>{
+		const p=new StereoPannerNode(ctx,{pan:L.p});
+		const dl=ctx.createDelay(.6); dl.delayTime.value=L.b/1000;
+		const g=ctx.createGain(); g.gain.value=.7;
+		const lfo=ctx.createOscillator(); lfo.frequency.value=L.r;
+		const lg=ctx.createGain(); lg.gain.value=L.d/1000;
+		input.connect(p); p.connect(dl); dl.connect(g); g.connect(merger,0,i%2);
+		lfo.connect(lg); lg.connect(dl.delayTime); lfo.start();
+	});
+	input.connect(dry); dry.connect(merger,0,0); dry.connect(merger,0,1);
+	merger.connect(wet); wet.connect(output); dry.connect(output);
+	return {input,output};
+}
+function buildAllpass(ctx,delaySec,gainAmt){
+	const input=ctx.createGain(), output=ctx.createGain();
+	const d=ctx.createDelay(1.0); d.delayTime.value=delaySec;
+	const g1=ctx.createGain(); g1.gain.value=gainAmt;
+	const g2=ctx.createGain(); g2.gain.value=-gainAmt;
+	input.connect(d); input.connect(g2); g2.connect(output);
+	d.connect(g1); g1.connect(output); output.connect(g1);
+	return {input,output};
+}
+function buildFDN(ctx){
+	const input=ctx.createGain(); input.gain.value=.7;
+	const output=ctx.createGain(); output.gain.value=.46;
+	const N=4,tms=[29,37,41,53];
+	const inG=[],outG=[],del=[],dmp=[],ap=[];
+	for(let i=0;i<N;i++){
+		inG[i]=ctx.createGain(); inG[i].gain.value=.72;
+		outG[i]=ctx.createGain(); outG[i].gain.value=.72;
+		del[i]=ctx.createDelay(1.0); del[i].delayTime.value=tms[i]/1000;
+		dmp[i]=ctx.createBiquadFilter(); dmp[i].type="lowpass"; dmp[i].frequency.value=7000;
+		ap[i]=buildAllpass(ctx,.003+i*.0015,.6);
+		input.connect(ap[i].input); ap[i].output.connect(inG[i]); inG[i].connect(del[i]);
+		del[i].connect(dmp[i]); dmp[i].connect(outG[i]); outG[i].connect(output);
+	}
+	const signs=[[+1,+1,+1,+1],[+1,-1,+1,-1],[+1,+1,-1,-1],[+1,-1,-1,+1]];
+	for(let i=0;i<4;i++)for(let j=0;j<4;j++){const g=ctx.createGain();g.gain.value=.25*signs[i][j];outG[i].connect(g);g.connect(inG[j]);}
+	const tone=ctx.createBiquadFilter(); tone.type="lowpass"; tone.frequency.value=8500; output.connect(tone);
+	const o=ctx.createGain(); tone.connect(o);
+	return {input,output:o};
+}
+function makeVoice(ctx,master){
+	const gain=ctx.createGain(); gain.gain.value=0;
+	const color=ctx.createGain(); color.gain.value=.9;
+	const pre=ctx.createGain(); pre.gain.value=.8;
+	const lpf1=ctx.createBiquadFilter(); lpf1.type="lowpass"; lpf1.frequency.value=2400; lpf1.Q.value=.6;
+	const lpf2=ctx.createBiquadFilter(); lpf2.type="lowpass"; lpf2.frequency.value=2300; lpf2.Q.value=.5;
+	const drive=ctx.createWaveShaper(); drive.curve=makeSoftClipCurve(.35,1024);
+	const oscA=ctx.createOscillator(); oscA.type="sawtooth";
+	const oscB=ctx.createOscillator(); oscB.type="sawtooth";
+	const oscC=ctx.createOscillator(); oscC.type="triangle";
+	const gA=ctx.createGain(); gA.gain.value=.55;
+	const gB=ctx.createGain(); gB.gain.value=.38;
+	const gC=ctx.createGain(); gC.gain.value=.25;
+	const lfo=ctx.createOscillator(); lfo.frequency.value=.035+Math.random()*.02;
+	const lfoG=ctx.createGain(); lfoG.gain.value=4+Math.random()*3;
+	const wow=ctx.createOscillator(); wow.type="sine"; wow.frequency.value=5.3+Math.random()*.8;
+	const wowG=ctx.createGain(); wowG.gain.value=.9;
+
+	oscA.connect(gA); oscB.connect(gB); oscC.connect(gC);
+	gA.connect(pre); gB.connect(pre); gC.connect(pre);
+	pre.connect(drive); drive.connect(lpf1); lpf1.connect(lpf2); lpf2.connect(color);
+
+	const pan=new StereoPannerNode(ctx,{pan:(Math.random()*1.6-0.8)});
+	color.connect(pan).connect(gain);
+	gain.connect(master);
+
+	lfo.connect(lfoG); lfoG.connect(oscA.detune); lfoG.connect(oscB.detune);
+	wow.connect(wowG); wowG.connect(oscA.detune); wowG.connect(oscB.detune);
+
+	oscA.start(); oscB.start(); oscC.start(); lfo.start(); wow.start();
+
+	return {
+		gain,oscA,oscB,oscC,lpf1,lpf2,
+		setFreq(hz){
+			oscA.frequency.setTargetAtTime(hz*(1+ 7/1200*Math.log(2)),ctx.currentTime,.25);
+			oscB.frequency.setTargetAtTime(hz*(1+-5/1200*Math.log(2)),ctx.currentTime,.25);
+			oscC.frequency.setTargetAtTime(hz*0.5,ctx.currentTime,.25);
+			const f=Math.min(5000,Math.max(900,hz*2.5));
+			lpf1.frequency.setTargetAtTime(f,ctx.currentTime,.5);
+			lpf2.frequency.setTargetAtTime(f*.92,ctx.currentTime,.6);
+		},
+		fadeTo(v,t=.8){this.gain.gain.setTargetAtTime(v,ctx.currentTime,Math.max(.01,t));}
+	};
+}
+function buildAudio(){
+	ctx=new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});
+	master=ctx.createGain(); master.gain.value=.85;
+	const softIn=ctx.createGain(); softIn.gain.value=1.0;
+	const soft=ctx.createWaveShaper(); soft.curve=makeSoftClipCurve(.6,2048);
+	outLim=ctx.createDynamicsCompressor();
+	outLim.attack.value=.003; outLim.release.value=.08; outLim.threshold.value=-8; outLim.knee.value=12; outLim.ratio.value=8;
+	meterNode=ctx.createAnalyser(); meterNode.fftSize=2048; meterBuf=new Float32Array(meterNode.fftSize);
+	chorus=buildChorus(ctx); reverb=buildFDN(ctx);
+	master.connect(softIn); softIn.connect(soft); soft.connect(chorus.input);
+	chorus.output.connect(reverb.input); reverb.output.connect(outLim);
+	outLim.connect(meterNode); outLim.connect(ctx.destination);
+
+	for(let i=0;i<4;i++) voices.push(makeVoice(ctx,master));
+}
+
+/* ===== Interactive nudge compass ===== */
+const state = { // initial “center”
+	root: 60,        // C4
+	qual: "maj",
+	add7: 1,         // maj7
+	add9: true,
+	add6: false,
+	inv: 0,
+	spread: 0
+};
+
+function updateAudioToState(){
+	const midi = realizeVoicing(state);
+	for(let i=0;i<4;i++){
+		voices[i].setFreq(midiToHz(midi[i]));
+		voices[i].fadeTo(0.24+(i===0?.05:0),.6);
+	}
+	document.getElementById('chordName').textContent = labelFromState(state) || "—";
+	document.getElementById('keyName').textContent = NOTE_NAMES[wrap12(state.root)];
+	document.getElementById('notes').textContent = midi.map(namePitch).join(" • ");
+}
+
+function handleTap(x,y,rect){
+	// x,y are client coords; rect is compass box
+	const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+	const dx=x-cx, dy=y-cy; // screen coords (y downwards)
+	const maxR=Math.min(rect.width,rect.height)/2-12;
+	let r=Math.hypot(dx,dy); const rn = Math.min(1, r/maxR);
+	if(r<12) return; // ignore center micro taps
+	const theta = Math.atan2(-dy, dx); // angle (up is +Y)
+	// spark
+	const spark=document.createElement('div');
+	spark.className='spark';
+	const spx = (dx/maxR)*50, spy = (dy/maxR)*50;
+	spark.style.left = (50+spx)+'%'; spark.style.top = (50+spy)+'%';
+	document.getElementById('compass').appendChild(spark);
+	setTimeout(()=>spark.remove(),700);
+
+	// apply musical nudge
+	const next = applyNudge(state, theta, rn);
+	Object.assign(state, next); // new center becomes current
+	updateAudioToState();
+}
+
+function wireCompass(){
+	const tap=document.getElementById('tap');
+	const comp=document.getElementById('compass');
+	let rect=null;
+	function upd(e){
+		const pt = (e.touches && e.touches[0])? e.touches[0] : e;
+		handleTap(pt.clientX, pt.clientY, rect);
+	}
+	tap.addEventListener('pointerdown', e=>{rect=comp.getBoundingClientRect(); upd(e);});
+	tap.addEventListener('touchstart', e=>{rect=comp.getBoundingClientRect(); upd(e);},{passive:true});
+}
+
+/* ===== Transport & meter ===== */
+function wireTransport(){
+	const startBtn=document.getElementById('startBtn');
+	const stopBtn=document.getElementById('stopBtn');
+	const status=document.getElementById('status');
+	startBtn.addEventListener('click',async()=>{
+		if(!ctx) buildAudio();
+		if(ctx.state!=="running") await ctx.resume();
+		updateAudioToState();
+		status.textContent='playing'; status.style.background='#0a2b2b'; startBtn.classList.add('on');
+	});
+	stopBtn.addEventListener('click',()=>{
+		if(!ctx) return;
+		voices.forEach(v=>v.fadeTo(0,.2));
+		status.textContent='stopped'; document.getElementById('meter').textContent='–∞ dB';
+		document.getElementById('startBtn').classList.remove('on');
+	});
+}
+function startMeter(){
+	function loop(){
+		if(ctx){
+			meterNode.getFloatTimeDomainData(meterBuf);
+			let sum=0; for(let i=0;i<meterBuf.length;i++) sum+=meterBuf[i]*meterBuf[i];
+			const rms=Math.sqrt(sum/meterBuf.length);
+			const db=20*Math.log10(rms||1e-8);
+			document.getElementById('meter').textContent=(db<-60?'–∞':db.toFixed(1)+' dB');
+		}
+		requestAnimationFrame(loop);
+	}
+	loop();
+}
+
+/* ===== Boot ===== */
+wireCompass();
+wireTransport();
+startMeter();
+</script>
+</body>
+</html>
