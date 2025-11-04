@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Speed → Choir Drone</title>
+<style>
+  :root{--bg:#0b0f14;--panel:#121826;--edge:#1e2a3a;--ink:#e8eef6;--m:#9fb3c8}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font:14px system-ui;touch-action:manipulation}
+  .wrap{max-width:1080px;margin:0 auto;padding:18px}
+  h1{font-size:20px;margin:6px 0 12px}
+  .card{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:14px}
+  .row{display:flex;align-items:center;gap:10px;margin:10px 0}
+  label{flex:1;color:#a8b6c7;font-size:12px}
+  input[type=range]{width:200px}
+  button,select{border:1px solid #243149;background:#141e2b;color:var(--ink);padding:8px 10px;border-radius:10px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .muted{color:var(--m);font-size:12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+  #log{font:12px/1.35 ui-monospace,Menlo,Consolas,monospace;background:#080c12;border:1px solid #1d293a;border-radius:10px;padding:10px;max-height:140px;overflow:auto;white-space:pre-wrap}
+  .meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+  .stat{display:flex;justify-content:space-between;margin:3px 0}
+  .badge{display:inline-block;padding:2px 6px;border-radius:8px;background:#182235;border:1px solid #2a3b5b;font-size:11px}
+  .pill{display:inline-flex;gap:6px;align-items:center;background:#0f1523;border:1px solid #21314a;border-radius:999px;padding:8px 10px}
+</style>
+<body>
+<div class="wrap">
+  <h1>🪽 Speed → Choir Drone</h1>
+
+  <div class="card">
+    <div class="row" style="margin-top:0">
+      <span class="pill" style="flex:1">
+        <b>Speed Master</b>
+        <input id="morph" type="range" min="0" max="1" step="0.001" value="0" disabled>
+      </span>
+      <label style="flex:none;display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input id="manualMorph" type="checkbox"> Manual
+      </label>
+    </div>
+    <div class="row" style="margin-bottom:0">
+      <button id="startAudio">Start Audio</button>
+      <button id="stopAudio" disabled>Stop Audio</button>
+      <button id="startSensors">Start Motion</button>
+      <button id="startGPS">Start GPS</button>
+      <button id="stopGPS" disabled>Stop GPS</button>
+      <span id="status" class="muted">idle</span>
+    </div>
+    <div class="row">
+      <label>Max speed for full choir (m/s)</label>
+      <input id="vmax" type="range" min="4" max="25" value="12" step="1">
+      <span id="vmaxv" class="muted">12</span>
+    </div>
+    <div class="meters">
+      <div>
+        <div class="stat"><span>Fused speed</span><b id="v_fused">-</b><span class="muted">m/s</span></div>
+        <div class="stat"><span>Fused speed</span><b id="v_fused_mph">-</b><span class="muted">mph</span></div>
+        <div class="stat"><span>Accel derived</span><b id="v_acc">-</b><span class="muted">m/s</span></div>
+        <div class="stat"><span>Accel Hz</span><b id="hz">0</b></div>
+      </div>
+      <div>
+        <div class="stat"><span>GPS speed</span><b id="v_gps">-</b><span class="muted">m/s</span></div>
+        <div class="stat"><span>GPS acc</span><b id="acc">-</b><span class="muted">m</span></div>
+        <div class="stat"><span>Fix age</span><b id="fixAge">-</b><span class="muted">ms</span></div>
+        <div class="stat"><span>Dist since anchor</span><b id="dist">0</b><span class="muted">m</span></div>
+      </div>
+      <div>
+        <div class="stat"><span>Active voices</span><b id="voiceCount">1</b></div>
+        <div class="stat"><span>Brightness (LPF)</span><b id="cutDisp">-</b><span class="muted">Hz</span></div>
+        <div class="stat"><span>Reverb mix</span><b id="revDisp">-</b></div>
+      </div>
+    </div>
+    <div id="log" aria-live="polite" style="margin-top:10px"></div>
+  </div>
+
+  <div class="grid" style="margin-top:16px">
+    <div class="card">
+      <h3>Master</h3>
+      <div class="row"><label>Volume</label><input id="vol" type="range" min="0" max="1" step="0.001" value="0.32"></div>
+      <div class="row"><label>Base Pitch (Hz)</label><input id="baseHz" type="range" min="30" max="200" step="0.01" value="65.41"></div>
+      <div class="row"><label>Warm Drive</label><input id="warmDrive" type="range" min="0.8" max="1.8" step="0.001" value="1.2"></div>
+    </div>
+    <div class="card">
+      <h3>Air & Formants</h3>
+      <div class="row"><label>Formant Q</label><input id="formantQ" type="range" min="2" max="25" step="0.1" value="12"></div>
+      <div class="row"><label>Choir Air Mix</label><input id="airMix" type="range" min="0" max="1" step="0.001" value="0.35"></div>
+      <div class="row"><label>Vowel Tilt</label><input id="vowel" type="range" min="0" max="1" step="0.001" value="0.2"></div>
+    </div>
+    <div class="card">
+      <h3>Echo & Space</h3>
+      <div class="row"><label>Delay Time (ms)</label><input id="dtime" type="range" min="100" max="900" step="1" value="420"></div>
+      <div class="row"><label>Delay Feedback</label><input id="dfb" type="range" min="0" max="0.9" step="0.001" value="0.42"></div>
+      <div class="row"><label>Delay Mix</label><input id="dmix" type="range" min="0" max="1" step="0.001" value="0.2"></div>
+      <div class="row"><label>Reverb Base Mix</label><input id="rmixBase" type="range" min="0" max="1" step="0.001" value="0.35"></div>
+    </div>
+  </div>
+
+  <p class="muted" style="margin-top:10px">
+    Layers (by speed): <span class="badge">0</span> deep root → <span class="badge">1</span> root pad → <span class="badge">2</span> 5th →
+    <span class="badge">3</span> octave → <span class="badge">4</span> major 3rd → <span class="badge">5</span> detuned cluster →
+    <span class="badge">6</span> shimmer → <span class="badge">7</span> airy formant choir.
+  </p>
+</div>
+
+<script>
+(()=> {
+  const $ = id => document.getElementById(id);
+  const log = msg => {
+    const L = $('log'); const t = new Date().toLocaleTimeString();
+    L.textContent += '['+t+'] '+msg+'\n'; L.scrollTop = L.scrollHeight;
+  };
+  const setStatus = t => { $('status').textContent = t; };
+
+  // ------- UI state -------
+  const morphSlider = $('morph');
+  const manualToggle = $('manualMorph');
+  let manualMode = false;
+  morphSlider.disabled = true;
+
+  // ------- AUDIO CORE -------
+  let ctx, started=false;
+  let master, comp, limiter, preSat, sat, toneLPF, outMix;
+  let delay, fb, dGain, convolver, rGain;
+  let choirBus, airBus, airGain, formF1, formF2;
+  let driftRAF = 0;
+
+  const semitone = s => Math.pow(2, s/12);
+  const clamp01 = x => Math.max(0, Math.min(1, x));
+  const smoothstep = (edge0, edge1, x) => {
+    const t = clamp01((x - edge0) / Math.max(1e-9, (edge1 - edge0)));
+    return t * t * (3 - 2*t);
+  };
+
+  function mkLimiterCurve(){ const n=65536,c=new Float32Array(n),cut=0.9; for(let i=0;i<n;i++){ const x=i/n*2-1; c[i]=Math.tanh((x/cut)*2.8);} return c; }
+  function mkSatCurve(){ const n=65536,c=new Float32Array(n); for(let i=0;i<n;i++){ const x=i/n*2-1; c[i]=Math.tanh(1.6*x)*0.85; } return c; }
+  function mkReverbImpulse(seconds=3.3,decay=2.9){
+    const len=(seconds*ctx.sampleRate)|0,buf=ctx.createBuffer(2,len,ctx.sampleRate);
+    for(let ch=0;ch<2;ch++){ const d=buf.getChannelData(ch); for(let i=0;i<len;i++){ const t=1-i/len; d[i]=(Math.random()*2-1)*Math.pow(t,decay); } }
+    return buf;
+  }
+
+  // Single voice utility (simple stack routed to bus)
+  function makeStack({hz, type='sawtooth', detCents=0, spread=0.35, gain=0.25, toBus}){
+    const g=ctx.createGain(); g.gain.value=0;
+    const p=ctx.createStereoPanner(); p.pan.value=spread;
+    const o=ctx.createOscillator(); o.type=type; o.frequency.value=hz; o.detune.value=detCents;
+    o.connect(g).connect(p).connect(toBus);
+    o.start();
+    return {o,g,p, setGain(v, t=0.15){ g.gain.setTargetAtTime(v, ctx.currentTime, Math.max(0.02,t*0.3)); },
+             setFreq(f, glide=0.2){ o.frequency.setTargetAtTime(f, ctx.currentTime, glide); },
+             stop(){ try{o.stop()}catch(_){}} };
+  }
+
+  // Layer builder: each layer returns a function (morph→targetGain) + handles
+  function buildLayers(rootHz){
+    const layers = [];
+    const choir = []; // for counting active
+    // 0) Deep root (always available, but we keep it as a "layer 0")
+    const deep = makeStack({hz: rootHz/2, type:'sine', detCents:0, spread:0, gain:0.6, toBus:choirBus});
+    layers.push({name:'deep', nodes:[deep], window:[0.00,0.00], baseGain:0.45, peakGain:0.6});
+
+    // 1) Root pad (mellow)
+    const rootL = makeStack({hz:rootHz, type:'triangle', detCents:-6, spread:-0.35, gain:0.22, toBus:choirBus});
+    const rootR = makeStack({hz:rootHz, type:'triangle', detCents:+6, spread:+0.35, gain:0.22, toBus:choirBus});
+    layers.push({name:'root pad', nodes:[rootL,rootR], window:[0.05,0.18], baseGain:0.0, peakGain:0.28});
+
+    // 2) Perfect fifth
+    const fifthHz = rootHz*semitone(7);
+    const fifthA = makeStack({hz:fifthHz, type:'sawtooth', detCents:-4, spread:-0.15, gain:0.2, toBus:choirBus});
+    const fifthB = makeStack({hz:fifthHz, type:'sawtooth', detCents:+4, spread:+0.15, gain:0.2, toBus:choirBus});
+    layers.push({name:'fifth', nodes:[fifthA,fifthB], window:[0.15,0.3], baseGain:0.0, peakGain:0.24});
+
+    // 3) Octave
+    const octHz = rootHz*2;
+    const oct = makeStack({hz:octHz, type:'triangle', detCents:0, spread:0, gain:0.18, toBus:choirBus});
+    layers.push({name:'octave', nodes:[oct], window:[0.25,0.42], baseGain:0.0, peakGain:0.2});
+
+    // 4) Major third
+    const m3Hz = rootHz*semitone(4);
+    const m3L = makeStack({hz:m3Hz, type:'sawtooth', detCents:-5, spread:-0.25, gain:0.16, toBus:choirBus});
+    const m3R = makeStack({hz:m3Hz, type:'sawtooth', detCents:+5, spread:+0.25, gain:0.16, toBus:choirBus});
+    layers.push({name:'M3rd', nodes:[m3L,m3R], window:[0.4,0.6], baseGain:0.0, peakGain:0.2});
+
+    // 5) Detuned cluster around root (angelic thickening)
+    const cl1 = makeStack({hz:rootHz, type:'sawtooth', detCents:-11, spread:-0.4, gain:0.14, toBus:choirBus});
+    const cl2 = makeStack({hz:rootHz, type:'sawtooth', detCents:+9,  spread:+0.4, gain:0.14, toBus:choirBus});
+    const cl3 = makeStack({hz:rootHz*2, type:'sine', detCents:+3,  spread:0,    gain:0.1,  toBus:choirBus});
+    layers.push({name:'cluster', nodes:[cl1,cl2,cl3], window:[0.55,0.75], baseGain:0.0, peakGain:0.22});
+
+    // 6) High shimmer (very gentle)
+    const sh1 = makeStack({hz:rootHz*3, type:'sine', detCents:+2, spread:+0.2, gain:0.08, toBus:choirBus});
+    const sh2 = makeStack({hz:rootHz*4, type:'sine', detCents:-2, spread:-0.2, gain:0.08, toBus:choirBus});
+    layers.push({name:'shimmer', nodes:[sh1,sh2], window:[0.7,0.88], baseGain:0.0, peakGain:0.12});
+
+    // 7) Airy formant “choir” (noise+resonance bus)
+    // pink-ish noise
+    const nbuf=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate);
+    const nd=nbuf.getChannelData(0);
+    let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0; // pink filter
+    for(let i=0;i<nd.length;i++){
+      const white=Math.random()*2-1;
+      b0=0.99886*b0+white*0.0555179; b1=0.99332*b1+white*0.0750759;
+      b2=0.96900*b2+white*0.1538520; b3=0.86650*b3+white*0.3104856;
+      b4=0.55000*b4+white*0.5329522; b5=-0.7616*b5-white*0.0168980;
+      nd[i]=(b0+b1+b2+b3+b4+b5+white*0.5362)*0.2;
+    }
+    const n=ctx.createBufferSource(); n.buffer=nbuf; n.loop=true;
+    const nG=ctx.createGain(); nG.gain.value=0.0;
+    n.connect(nG).connect(airBus); n.start();
+    layers.push({name:'air', nodes:[{setGain:(v,t)=>nG.gain.setTargetAtTime(v,ctx.currentTime,Math.max(0.02,t*0.3))}], window:[0.85,1.0], baseGain:0.0, peakGain:+$('airMix').value});
+
+    return layers;
+  }
+
+  let layers = [];
+  function retuneLayers(rootHz){
+    // Rebuild all tone layers at new pitch (simpler/robust)
+    if (!ctx) return;
+    // Disconnect old by stopping oscillators
+    layers.forEach(L => L.nodes.forEach(n => n.stop && n.stop()));
+    layers = buildLayers(rootHz);
+  }
+
+  function applyVowel(x){
+    // A-E-I-O-U table; interpolate for tilt
+    const tbl=[{F1:800,F2:1150},{F1:500,F2:1700},{F1:350,F2:2200},{F1:450,F2:800},{F1:325,F2:700}];
+    const seg=Math.min(tbl.length-2, Math.floor(x*(tbl.length-1)));
+    const t=(x*(tbl.length-1))-seg, a=tbl[seg], b=tbl[seg+1];
+    formF1.frequency.setTargetAtTime(a.F1+(b.F1-a.F1)*t, ctx.currentTime, 0.15);
+    formF2.frequency.setTargetAtTime(a.F2+(b.F2-a.F2)*t, ctx.currentTime, 0.15);
+  }
+
+  function startAudioOnce(){
+    if (started) return;
+    ctx=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
+
+    // Buses / processors
+    master=ctx.createGain(); master.gain.value=0.0001;
+    comp=ctx.createDynamicsCompressor(); comp.threshold.value=-22; comp.knee.value=18; comp.ratio.value=2.5; comp.attack.value=0.01; comp.release.value=0.2;
+    limiter=ctx.createWaveShaper(); limiter.curve=mkLimiterCurve();
+
+    const toneBus=ctx.createGain();
+    toneLPF=ctx.createBiquadFilter(); toneLPF.type='lowpass'; toneLPF.Q.value=0.7; toneLPF.frequency.value=1500;
+    toneBus.connect(toneLPF);
+
+    // “Choir” tonal bus where pitched oscillators go
+    choirBus=ctx.createGain(); choirBus.gain.value=1.0; choirBus.connect(toneBus);
+
+    // Air/formant path
+    airBus=ctx.createGain(); airBus.gain.value=1.0;
+    formF1=ctx.createBiquadFilter(); formF1.type='bandpass'; formF1.Q.value=+$('formantQ').value;
+    formF2=ctx.createBiquadFilter(); formF2.type='bandpass'; formF2.Q.value=+$('formantQ').value;
+    airGain=ctx.createGain(); airGain.gain.value=0.0;
+    airBus.connect(formF1).connect(airGain).connect(toneBus);
+    airBus.connect(formF2).connect(airGain);
+
+    // Warmth / saturation
+    preSat=ctx.createGain(); preSat.gain.value=+$('warmDrive').value;
+    sat=ctx.createWaveShaper(); sat.curve=mkSatCurve();
+    toneLPF.connect(preSat).connect(sat);
+
+    // FX
+    delay=ctx.createDelay(1.2); delay.delayTime.value=+$('dtime').value/1000;
+    fb=ctx.createGain(); fb.gain.value=+$('dfb').value;
+    dGain=ctx.createGain(); dGain.gain.value=+$('dmix').value;
+    sat.connect(delay).connect(fb).connect(delay);
+    delay.connect(dGain);
+
+    convolver=ctx.createConvolver(); convolver.buffer=mkReverbImpulse(3.2,2.8);
+    rGain=ctx.createGain(); rGain.gain.value=+$('rmixBase').value;
+    sat.connect(convolver).connect(rGain);
+
+    // Mixdown
+    outMix=ctx.createGain();
+    sat.connect(outMix);
+    dGain.connect(outMix);
+    rGain.connect(outMix);
+    outMix.connect(comp).connect(limiter).connect(master).connect(ctx.destination);
+
+    // Build initial layers at base pitch
+    retuneLayers(+$('baseHz').value);
+    applyVowel(+$('vowel').value);
+
+    // Gentle parameter drift (subtle LPF wobble, tiny detunes)
+    const driftDepth = 0.5;
+    const t0=performance.now();
+    function drift(){
+      const t=(performance.now()-t0)/1000;
+      const wob = Math.sin(t*0.12)*90*driftDepth + (Math.random()-0.5)*1.2;
+      toneLPF.frequency.setTargetAtTime(Math.max(150, 1200 + wob), ctx.currentTime, 0.35);
+      driftRAF = requestAnimationFrame(drift);
+    }
+    driftRAF = requestAnimationFrame(drift);
+
+    // Bring up master
+    master.gain.setTargetAtTime(+$('vol').value, ctx.currentTime, 0.25);
+    started=true; $('startAudio').disabled=true; $('stopAudio').disabled=false; setStatus('audio running'); log('Audio started');
+  }
+
+  function stopAudio(){
+    if(!started) return;
+    master.gain.setTargetAtTime(0.00001, ctx.currentTime, 0.25);
+    if (driftRAF) cancelAnimationFrame(driftRAF);
+    setTimeout(()=>{ try{ctx.close()}catch(_){};
+      started=false; $('startAudio').disabled=false; $('stopAudio').disabled=true; setStatus('audio stopped'); log('Audio stopped'); }, 350);
+  }
+
+  // Param wiring
+  function applyParams(){
+    if (!started) return;
+    master.gain.setTargetAtTime(+$('vol').value, ctx.currentTime, 0.2);
+    preSat.gain.setTargetAtTime(+$('warmDrive').value, ctx.currentTime, 0.15);
+    formF1.Q.setTargetAtTime(+$('formantQ').value, ctx.currentTime, 0.15);
+    formF2.Q.setTargetAtTime(+$('formantQ').value, ctx.currentTime, 0.15);
+    delay.delayTime.setTargetAtTime(+$('dtime').value/1000, ctx.currentTime, 0.12);
+    fb.gain.setTargetAtTime(+$('dfb').value, ctx.currentTime, 0.12);
+    dGain.gain.setTargetAtTime(+$('dmix').value, ctx.currentTime, 0.12);
+    // If baseHz changed significantly, rebuild
+    retuneLayers(+$('baseHz').value);
+  }
+
+  $('startAudio').addEventListener('click', startAudioOnce);
+  $('stopAudio').addEventListener('click', stopAudio);
+  ['vol','warmDrive','formantQ','dtime','dfb','dmix','baseHz'].forEach(id=>$(id).addEventListener('input', applyParams));
+  $('vowel').addEventListener('input', ()=>{ if(started) applyVowel(+$('vowel').value); });
+  ['touchstart','touchend','mousedown','keydown'].forEach(ev=>{
+    document.addEventListener(ev, async ()=>{ try{ if(ctx && ctx.state!=='running') await ctx.resume(); }catch(e){} }, {passive:true});
+  });
+
+  // ------- SPEED→MORPH MAPPING (ACCEL+GPS fusion) -------
+  let VMAX = +$('vmax').value;
+  $('vmaxv').textContent = VMAX;
+  $('vmax').addEventListener('input', e=>{ VMAX=+e.target.value; $('vmaxv').textContent=e.target.value; });
+
+  let lastMotionT=null, emaHz=0, gX=0,gY=0,gZ=0;
+  const LPF_G=0.02, NOISE_FLOOR=0.12, BETA=0.6;
+  let v_acc=0;
+  let gpsWatch=null, lastFixAge=Infinity, lastPos=null, anchorPos=null, distSinceAnchor=0, gpsSpeed=null, lastFix=null;
+  let mode='ACCEL_LEAD', v_fused=0;
+  const ACC_OK=20, FIX_STALE=1500, D_ANCHOR=10, SPEED_DISAG=1.5, A_LEAD=0.9;
+
+  function toRad(d){ return d*Math.PI/180; }
+  function haversine(a,b){ const R=6371000, dLat=toRad(b.lat-a.lat), dLon=toRad(b.lon-a.lon);
+    const s1=Math.sin(dLat/2), s2=Math.sin(dLon/2), v=s1*s1+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*s2*s2;
+    return 2*R*Math.asin(Math.min(1,Math.sqrt(v))); }
+
+  function updateStats(){
+    $('v_acc').textContent=v_acc.toFixed(2);
+    $('v_gps').textContent=gpsSpeed==null?'-':gpsSpeed.toFixed(2);
+    $('v_fused').textContent=v_fused.toFixed(2);
+    $('v_fused_mph').textContent=(v_fused*2.236936).toFixed(2);
+    $('hz').textContent=emaHz.toFixed(1);
+    $('fixAge').textContent=isFinite(lastFixAge)?lastFixAge.toFixed(0):'-';
+    $('dist').textContent=distSinceAnchor.toFixed(1);
+    $('acc').textContent=lastFix && lastFix.accuracy!=null ? Math.round(lastFix.accuracy) : '-';
+  }
+
+  function onMotion(e){
+    const t=performance.now()/1000; let dt=lastMotionT?(t-lastMotionT):0; lastMotionT=t;
+    if (dt<=0) return; if (dt>0.25) dt=0.25;
+    const instHz=1/Math.max(0.001,dt); emaHz=0.8*emaHz+0.2*instHz;
+    let ax,ay,az;
+    if (e.acceleration && (e.acceleration.x!=null||e.acceleration.y!=null||e.acceleration.z!=null)){
+      ax=e.acceleration.x||0; ay=e.acceleration.y||0; az=e.acceleration.z||0;
+    } else {
+      const ag=e.accelerationIncludingGravity||{}; const ix=ag.x||0, iy=ag.y||0, iz=ag.z||0;
+      gX=(1-LPF_G)*gX+LPF_G*ix; gY=(1-LPF_G)*gY+LPF_G*iy; gZ=(1-LPF_G)*gZ+LPF_G*iz;
+      ax=ix-gX; ay=iy-gY; az=iz-gZ;
+    }
+    const amag=Math.sqrt(ax*ax+ay*ay+az*az), a_eff=Math.max(0, amag - NOISE_FLOOR);
+    v_acc += a_eff*dt; v_acc -= (v_acc*BETA)*dt; if (v_acc<0) v_acc=0;
+  }
+  function enableMotion(){
+    if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission==='function'){
+      DeviceMotionEvent.requestPermission().then(function(p){
+        if (p!=='granted'){ setStatus('Motion permission denied'); log('Motion permission denied'); return; }
+        window.addEventListener('devicemotion', onMotion, false);
+        setStatus('Accelerometer active'); log('Motion enabled');
+      }).catch(function(err){ setStatus('Motion error'); log('Motion error: '+err); });
+    } else {
+      window.addEventListener('devicemotion', onMotion, false);
+      setStatus('Accelerometer active'); log('Motion enabled');
+    }
+  }
+  function startGPS(){
+    if (!navigator.geolocation){ setStatus('No geolocation'); log('No geolocation'); return; }
+    try{
+      gpsWatch = navigator.geolocation.watchPosition(onGPS, function(e){
+        setStatus('GPS error'); log('GPS error: '+e.message);
+      }, { enableHighAccuracy:true, maximumAge:1000, timeout:10000 });
+      setStatus('GPS started…'); log('GPS watch started');
+      $('startGPS').disabled=true; $('stopGPS').disabled=false;
+    }catch(err){ setStatus('GPS start error'); log('GPS start error: '+err); }
+  }
+  function onGPS(pos){
+    const c=pos.coords, now=Date.now();
+    lastFixAge=now-pos.timestamp;
+    const cur={lat:c.latitude, lon:c.longitude, acc:c.accuracy||50, t:pos.timestamp};
+    let v = (c.speed==null || isNaN(c.speed)) ? null : c.speed;
+    if (!v && lastPos){ const dt=Math.max(0.25,(cur.t-lastPos.t)/1000), d=haversine(lastPos,cur); v=d/dt; }
+    gpsSpeed = (v!=null && isFinite(v) && v>=0) ? v : null;
+    if (anchorPos==null) anchorPos=cur;
+    if (lastPos){ const step=haversine(lastPos,cur); if (step > Math.max((c.accuracy||30)*0.5, 2)) distSinceAnchor += step; }
+    lastPos=cur;
+    lastFix = {cur:cur, accuracy:c.accuracy||50};
+    setStatus('GPS fix OK');
+  }
+  function stopGPS(){
+    if (gpsWatch!=null){ navigator.geolocation.clearWatch(gpsWatch); gpsWatch=null; }
+    $('startGPS').disabled=false; $('stopGPS').disabled=true; setStatus('GPS stopped'); log('GPS stopped');
+  }
+  function maybeSwitchModes(){
+    const accOK = lastFix && (lastFix.accuracy <= ACC_OK);
+    const fixFresh = lastFixAge <= FIX_STALE;
+    const disagree = (gpsSpeed!=null) && (Math.abs((v_acc||0) - gpsSpeed) >= SPEED_DISAG);
+    const accelWake = (v_acc>0.1) || (emaHz>5 && v_acc>0.05);
+    if (mode==='ACCEL_LEAD'){
+      if (accOK && fixFresh && ((distSinceAnchor >= D_ANCHOR) || disagree)) {
+        mode='GPS_ANCHOR';
+        if (gpsSpeed!=null) v_fused = 0.3*v_fused + 0.7*gpsSpeed;
+        log('Switch -> GPS_ANCHOR');
+      }
+    } else {
+      if (accelWake || !accOK || !fixFresh || gpsSpeed==null){
+        mode='ACCEL_LEAD'; anchorPos = lastPos; distSinceAnchor = 0; log('Switch -> ACCEL_LEAD');
+      }
+    }
+  }
+
+  let morphTarget = 0, morphSmooth = 0;
+
+  function driveUIFromMorph(x){
+    // layer crossfades
+    let activeCount = 0;
+    layers.forEach(L=>{
+      const g = L.window[0]===L.window[1]
+        ? L.peakGain
+        : L.baseGain + (L.peakGain - L.baseGain) * smoothstep(L.window[0], L.window[1], x);
+      L.nodes.forEach(n => n.setGain(g, 0.18));
+      if (g > 0.01) activeCount++;
+    });
+
+    // brightness + space scale with morph
+    if (started){
+      const cut = 500 + x*7000;       // 500 → 7500 Hz
+      const rMix = +$('rmixBase').value + x*0.35; // add up to +0.35 at top
+      toneLPF.frequency.setTargetAtTime(cut, ctx.currentTime, 0.2);
+      rGain.gain.setTargetAtTime(Math.min(1, rMix), ctx.currentTime, 0.25);
+      airGain.gain.setTargetAtTime(+$('airMix').value * smoothstep(0.85, 1.0, x), ctx.currentTime, 0.2);
+      $('cutDisp').textContent = cut.toFixed(0);
+      $('revDisp').textContent = rMix.toFixed(2);
+      $('voiceCount').textContent = activeCount.toFixed(0);
+    }
+    morphSlider.value = x;
+  }
+
+  function fuseSpeed(){
+    maybeSwitchModes();
+    if (mode==='ACCEL_LEAD'){
+      v_fused = 0.9*v_acc + 0.1*v_fused;
+      if (gpsSpeed!=null && lastFixAge<=1500){ const soft=0.05; v_fused = (1-soft)*v_fused + soft*gpsSpeed; }
+    } else {
+      if (gpsSpeed!=null){ const fast=0.65; v_fused = (1-fast)*v_fused + fast*gpsSpeed; }
+    }
+    if (v_fused<0) v_fused=0;
+    const raw = clamp01(v_fused/Math.max(0.1, VMAX));
+
+    // Target/smoothing for musical feel
+    const deltaTarget = raw - morphTarget;
+    const targetRate = Math.abs(deltaTarget) < 0.02 ? 0.1 : 0.3;
+    morphTarget += deltaTarget * targetRate;
+    if (Math.abs(raw - morphTarget) < 0.001) morphTarget = raw;
+
+    const deltaSmooth = morphTarget - morphSmooth;
+    const smoothRate = Math.abs(deltaSmooth) < 0.005 ? 0.25 : 0.15;
+    morphSmooth += deltaSmooth * smoothRate;
+    if (Math.abs(deltaSmooth) < 0.0005) morphSmooth = morphTarget;
+
+    if (!manualMode) driveUIFromMorph(morphSmooth);
+    updateStats();
+    requestAnimationFrame(fuseSpeed);
+  }
+  fuseSpeed();
+
+  // Manual morph
+  manualToggle.addEventListener('change', e=>{
+    manualMode = e.target.checked;
+    morphSlider.disabled = !manualMode;
+    if (!manualMode) driveUIFromMorph(morphSmooth);
+  });
+  morphSlider.addEventListener('input', ()=>{
+    if (manualMode) driveUIFromMorph(+morphSlider.value);
+  });
+
+  // Motion/GPS buttons
+  $('startSensors').addEventListener('click', ()=>{ enableMotion(); log('Motion requested'); });
+  $('startGPS').addEventListener('click', ()=>{ startGPS(); });
+  $('stopGPS').addEventListener('click', ()=>{ stopGPS(); });
+
+  // Safety: resume on touch if suspended
+  window.addEventListener('devicemotion', ()=>{}, { once:true });
+
+  // Init vowel displays
+  if (location.protocol==='file:'){ log('Note: GPS may be blocked on file://; use http(s) if needed.'); }
+})();
+</script>
+</body>
+</html>
