@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Drone Choir — Compass (4-Voice)</title>
+<style>
+:root{--bg:#0b0f14;--fg:#e8eef6;--mut:#97a7c0;--card:#111723;--stroke:#1c2a3b;--accent:#7cc}
+html,body{height:100%}
+body{margin:0;background:radial-gradient(1200px 600px at 10% -10%,#122034 0%,#0b0f14 40%,#070a0f 100%);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto}
+.wrap{max-width:980px;margin:0 auto;padding:18px}
+h1{margin:4px 0 8px;font-size:20px;font-weight:650}
+.sub{color:var(--mut);margin:-4px 0 14px}
+.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:linear-gradient(180deg,#121a27,#0f1520);border:1px solid var(--stroke);border-radius:14px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.btn{appearance:none;border:1px solid var(--stroke);background:#0f1622;color:var(--fg);padding:10px 12px;border-radius:12px;cursor:pointer;font-weight:600;transition:.15s transform,.15s background,.15s border-color}
+.btn.primary{background:linear-gradient(180deg,#0f2a36,#0b202b);border-color:#234a5e}
+.btn:active{transform:translateY(1px)}
+.badge{display:inline-block;font-size:11px;padding:3px 8px;border:1px solid var(--stroke);border-radius:999px;background:#0f1622;color:var(--mut)}
+.hr{height:1px;background:linear-gradient(90deg,transparent,#1b2b3d 40%,#1b2b3d 60%,transparent);margin:12px 0}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:10px 14px;align-items:center}
+.small{font-size:12px;color:var(--mut)}
+
+.compass{
+	position:relative;aspect-ratio:1/1;width:100%;max-width:520px;margin:8px auto 0;
+	background:conic-gradient(from -90deg,#15263a 0 90deg,#122235 90deg 180deg,#0f1c2b 180deg 270deg,#101f32 270deg 360deg);
+	border:1px solid var(--stroke);border-radius:18px;box-shadow:inset 0 0 60px rgba(0,0,0,.35),0 10px 30px rgba(0,0,0,.25)
+}
+.ring{
+	position:absolute;inset:10px;border-radius:50%;
+	border:1px dashed #24415e;box-shadow:inset 0 0 120px rgba(0,0,0,.3)
+}
+.ring:before,.ring:after{
+	content:"";position:absolute;left:50%;top:50%;translate:-50% -50%;border-radius:50%;
+	border:1px dashed #1f3650;opacity:.8
+}
+.ring:before{width:66%;height:66%}
+.ring:after{width:33%;height:33%}
+.label{
+	position:absolute;left:50%;top:10px;translate:-50% 0;font-weight:700;color:#bfe5ff;text-shadow:0 2px 10px rgba(0,0,0,.5)
+}
+.dir{position:absolute;color:#a9c4df;font-weight:700;font-size:13px;text-shadow:0 2px 8px rgba(0,0,0,.5)}
+.dir.n{left:50%;top:8px;translate:-50% 0}
+.dir.s{left:50%;bottom:8px;translate:-50% 0}
+.dir.e{right:8px;top:50%;translate:0 -50%}
+.dir.w{left:8px;top:50%;translate:0 -50%}
+
+.puck{
+	position:absolute;width:26px;height:26px;border-radius:50%;
+	background:radial-gradient(circle at 30% 30%,#ccffff,#7cc);box-shadow:0 6px 18px rgba(0,0,0,.45);
+	border:0;pointer-events:none
+}
+.track{
+	position:absolute;left:50%;top:50%;translate:-50% -50%;
+	width:8px;height:8px;border-radius:50%;background:#5bd;box-shadow:0 0 0 6px rgba(91,221,255,.12)
+}
+.hint{
+	position:absolute;left:50%;top:50%;translate:-50% -50%;
+	color:#89a5c3;font-size:12px;opacity:.9
+}
+.legend{
+	position:absolute;left:50%;bottom:12px;translate:-50% 0;color:#b8cbe4;font-size:12px;text-align:center;opacity:.9
+}
+.overlay{position:absolute;inset:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+	<h1>Drone Choir — Compass</h1>
+	<div class="sub">Drag the puck. Direction = chord mood. Distance = transpose (center 0, edge ±12). It glides and blooms as you move.</div>
+
+	<div class="grid">
+		<div class="card">
+			<div class="row">
+				<button id="startBtn" class="btn primary">Start</button>
+				<button id="stopBtn" class="btn">Stop</button>
+				<span id="status" class="badge">stopped</span>
+			</div>
+			<div class="hr"></div>
+
+			<div class="compass" id="compass">
+				<div class="ring"></div>
+				<div class="label">Compass Pad</div>
+				<div class="dir n">N • airy (Maj7)</div>
+				<div class="dir e">E • bright (Add9)</div>
+				<div class="dir s">S • dark (Min7)</div>
+				<div class="dir w">W • open (Sus2)</div>
+
+				<div class="track"></div>
+				<div class="puck" id="puck" style="left:50%;top:50%"></div>
+				<div class="hint">drag</div>
+				<div class="legend">transpose shows by radius (–12…+12)</div>
+				<div class="overlay" id="pad"></div>
+			</div>
+		</div>
+
+		<div class="card">
+			<div class="label">Engine</div>
+			<div class="kv">
+				<div>Output</div><div><span id="meter" class="badge">–∞ dB</span></div>
+				<div>Chord</div><div><span id="chordName" class="badge">—</span></div>
+				<div>Key</div><div><span id="keyName" class="badge">C</span> <span class="small">(moves with radius)</span></div>
+				<div>Notes</div><div><span id="notes" class="badge">—</span></div>
+				<div>Lushness</div><div><span class="badge">tri-saw blend • fold • ladder LPF • chorus • FDN</span></div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<script>
+/* ====== Musical helpers ====== */
+const NOTE_NAMES=["C","C♯","D","E♭","E","F","F♯","G","A♭","A","B♭","B"];
+function midiToHz(m){return 440*Math.pow(2,(m-69)/12)}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function lerp(a,b,t){return a+(b-a)*t}
+
+const CHORDS = {
+	// 4 “moods” on the compass
+	N:{ name:"Maj7 (airy)",    iv:[0,4,7,11] },
+	E:{ name:"Add9 (bright)",  iv:[0,4,7,14] },
+	S:{ name:"Min7 (dark)",    iv:[0,3,7,10] },
+	W:{ name:"Sus2 (open)",    iv:[0,2,7,14] },
+};
+
+function chordFromAngle(theta){
+	// theta: 0 at +X (east), up is -Y so rotate so 0° = North for intuition
+	// We'll split into 4 quadrants centered on N/E/S/W and crossfade near borders.
+	// Simpler: pick nearest direction; glide will do the morphing.
+	const deg = (theta*180/Math.PI+360)%360;
+	const dirs = [
+		{d:"N",ang:0},
+		{d:"E",ang:90},
+		{d:"S",ang:180},
+		{d:"W",ang:270},
+	];
+	let best=dirs[0],bd=999;
+	for(const k of dirs){
+		let diff = Math.abs(((deg-k.ang+540)%360)-180);
+		if(diff<bd){bd=diff;best=k}
+	}
+	return {dir:best.d, chord:CHORDS[best.d]};
+}
+
+/* ====== State ====== */
+let ctx, master, outLim, meterNode, meterBuf;
+let chorus, reverb;
+let global = {
+	started:false, baseMidi:60, transpose:0,
+	chord:CHORDS.N, voices:[]
+};
+
+/* ====== Audio graph ====== */
+function makeSoftClipCurve(amount=0.6,n=1024){
+	const c=new Float32Array(n);
+	for(let i=0;i<n;i++){const x=(i/(n-1))*2-1;c[i]=Math.tanh(x*(1+amount*2));}
+	return c;
+}
+function buildChorus(ctx){
+	const input=ctx.createGain(); const output=ctx.createGain();
+	const wet=ctx.createGain(); wet.gain.value=.35;
+	const dry=ctx.createGain(); dry.gain.value=.85;
+	const merger=ctx.createChannelMerger(2);
+
+	const lines=[{d:8,b:14,r:.12,p:-.7},{d:6,b:11,r:.09,p:0},{d:10,b:17,r:.16,p:.7}];
+	lines.forEach((L,i)=>{
+		const p=new StereoPannerNode(ctx,{pan:L.p});
+		const dl=ctx.createDelay(.6); dl.delayTime.value=L.b/1000;
+		const g=ctx.createGain(); g.gain.value=.7;
+		const lfo=ctx.createOscillator(); lfo.frequency.value=L.r;
+		const lg=ctx.createGain(); lg.gain.value=L.d/1000;
+		input.connect(p); p.connect(dl); dl.connect(g); g.connect(merger,0,i%2);
+		lfo.connect(lg); lg.connect(dl.delayTime); lfo.start();
+	});
+	input.connect(dry); dry.connect(merger,0,0); dry.connect(merger,0,1);
+	merger.connect(wet);
+	wet.connect(output); dry.connect(output);
+	return {input,output};
+}
+function buildAllpass(ctx,delaySec,gainAmt){
+	const input=ctx.createGain(), output=ctx.createGain();
+	const d=ctx.createDelay(1.0); d.delayTime.value=delaySec;
+	const g1=ctx.createGain(); g1.gain.value=gainAmt;
+	const g2=ctx.createGain(); g2.gain.value=-gainAmt;
+	input.connect(d); input.connect(g2); g2.connect(output);
+	d.connect(g1); g1.connect(output); output.connect(g1);
+	return {input,output};
+}
+function buildFDN(ctx){
+	const input=ctx.createGain(); input.gain.value=.7;
+	const output=ctx.createGain(); output.gain.value=.46;
+	const N=4,tms=[29,37,41,53];
+	const inG=[],outG=[],del=[],dmp=[],ap=[];
+	for(let i=0;i<N;i++){
+		inG[i]=ctx.createGain(); inG[i].gain.value=.72;
+		outG[i]=ctx.createGain(); outG[i].gain.value=.72;
+		del[i]=ctx.createDelay(1.0); del[i].delayTime.value=tms[i]/1000;
+		dmp[i]=ctx.createBiquadFilter(); dmp[i].type="lowpass"; dmp[i].frequency.value=7000;
+		ap[i]=buildAllpass(ctx,.003+i*.0015,.6);
+		input.connect(ap[i].input); ap[i].output.connect(inG[i]); inG[i].connect(del[i]);
+		del[i].connect(dmp[i]); dmp[i].connect(outG[i]);
+		outG[i].connect(output);
+	}
+	const signs=[[+1,+1,+1,+1],[+1,-1,+1,-1],[+1,+1,-1,-1],[+1,-1,-1,+1]];
+	for(let i=0;i<4;i++)for(let j=0;j<4;j++){const g=ctx.createGain();g.gain.value=.25*signs[i][j];outG[i].connect(g);g.connect(inG[j]);}
+	const tone=ctx.createBiquadFilter(); tone.type="lowpass"; tone.frequency.value=8500; output.connect(tone);
+	const o=ctx.createGain(); tone.connect(o);
+	return {input,output:o};
+}
+function makeVoice(ctx,master){
+	const gain=ctx.createGain(); gain.gain.value=0;
+	const color=ctx.createGain(); color.gain.value=.9;
+	const pre=ctx.createGain(); pre.gain.value=.8;
+
+	const lpf1=ctx.createBiquadFilter(); lpf1.type="lowpass"; lpf1.frequency.value=2400; lpf1.Q.value=.6;
+	const lpf2=ctx.createBiquadFilter(); lpf2.type="lowpass"; lpf2.frequency.value=2300; lpf2.Q.value=.5;
+
+	const drive=ctx.createWaveShaper(); drive.curve=makeSoftClipCurve(.35,1024);
+
+	const oscA=ctx.createOscillator(); oscA.type="sawtooth";
+	const oscB=ctx.createOscillator(); oscB.type="sawtooth";
+	const oscC=ctx.createOscillator(); oscC.type="triangle";
+	const gA=ctx.createGain(); gA.gain.value=.55;
+	const gB=ctx.createGain(); gB.gain.value=.38;
+	const gC=ctx.createGain(); gC.gain.value=.25;
+
+	const lfo=ctx.createOscillator(); lfo.frequency.value=.035+Math.random()*.02;
+	const lfoG=ctx.createGain(); lfoG.gain.value=4+Math.random()*3;
+	const wow=ctx.createOscillator(); wow.type="sine"; wow.frequency.value=5.3+Math.random()*.8;
+	const wowG=ctx.createGain(); wowG.gain.value=.9;
+
+	oscA.connect(gA); oscB.connect(gB); oscC.connect(gC);
+	gA.connect(pre); gB.connect(pre); gC.connect(pre);
+	pre.connect(drive); drive.connect(lpf1); lpf1.connect(lpf2); lpf2.connect(color);
+
+	const pan=new StereoPannerNode(ctx,{pan:(Math.random()*1.6-0.8)});
+	color.connect(pan).connect(gain);
+	gain.connect(master);
+
+	lfo.connect(lfoG); lfoG.connect(oscA.detune); lfoG.connect(oscB.detune);
+	wow.connect(wowG); wowG.connect(oscA.detune); wowG.connect(oscB.detune);
+
+	oscA.start(); oscB.start(); oscC.start(); lfo.start(); wow.start();
+
+	return {
+		gain,oscA,oscB,oscC,lpf1,lpf2,
+		setFreq(hz){
+			oscA.frequency.setTargetAtTime(hz*(1+ 7/1200*Math.log(2)),ctx.currentTime,.25);
+			oscB.frequency.setTargetAtTime(hz*(1+-5/1200*Math.log(2)),ctx.currentTime,.25);
+			oscC.frequency.setTargetAtTime(hz*0.5,ctx.currentTime,.25);
+			const f=Math.min(5000,Math.max(900,hz*2.5));
+			lpf1.frequency.setTargetAtTime(f,ctx.currentTime,.5);
+			lpf2.frequency.setTargetAtTime(f*.92,ctx.currentTime,.6);
+		},
+		fadeTo(v,t=.8){this.gain.gain.setTargetAtTime(v,ctx.currentTime,Math.max(.01,t));}
+	};
+}
+
+function buildAudio(){
+	ctx=new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});
+	master=ctx.createGain(); master.gain.value=.85;
+	const softIn=ctx.createGain(); softIn.gain.value=1.0;
+	const soft=ctx.createWaveShaper(); soft.curve=makeSoftClipCurve(.6,2048);
+	outLim=ctx.createDynamicsCompressor();
+	outLim.attack.value=.003; outLim.release.value=.08; outLim.threshold.value=-8; outLim.knee.value=12; outLim.ratio.value=8;
+
+	meterNode=ctx.createAnalyser(); meterNode.fftSize=2048; meterBuf=new Float32Array(meterNode.fftSize);
+
+	chorus=buildChorus(ctx); reverb=buildFDN(ctx);
+	master.connect(softIn); softIn.connect(soft); soft.connect(chorus.input);
+	chorus.output.connect(reverb.input); reverb.output.connect(outLim);
+	outLim.connect(meterNode); outLim.connect(ctx.destination);
+
+	global.voices=[makeVoice(ctx,master),makeVoice(ctx,master),makeVoice(ctx,master),makeVoice(ctx,master)];
+	updateAllFrequencies();
+}
+
+/* ====== Compass control → music ====== */
+function setTargetFromPad(dx,dy,radNorm){
+	// dx,dy relative to center in pixels; radNorm 0..1
+	const theta=Math.atan2(-dy,dx); // 0 at east, ccw positive; we interpret in chordFromAngle
+	const {dir,chord}=chordFromAngle(theta);
+	global.chord=chord;
+
+	// radius maps to transpose in [-12,+12], with a small deadzone
+	const dead=0.06;
+	const r=clamp((radNorm-dead)/(1-dead),0,1);
+	const semis = Math.round(lerp(-12,12,r));
+	global.transpose=semis;
+	updateAllFrequencies();
+}
+
+function updateAllFrequencies(){
+	const base=global.baseMidi+global.transpose;
+	const iv=global.chord.iv;
+	let noteNames=[];
+	for(let i=0;i<4;i++){
+		const m=base+iv[i]; const hz=midiToHz(m);
+		global.voices[i].setFreq(hz);
+		global.voices[i].fadeTo(0.24+(i===0?.05:0),.8);
+		noteNames.push(NOTE_NAMES[(m%12+12)%12]);
+	}
+	document.getElementById('keyName').textContent=NOTE_NAMES[(base%12+12)%12];
+	document.getElementById('chordName').textContent=global.chord.name;
+	document.getElementById('notes').textContent=noteNames.join(" • ");
+}
+
+/* ====== UI wiring ====== */
+function wireCompass(){
+	const pad=document.getElementById('pad');
+	const puck=document.getElementById('puck');
+	const comp=document.getElementById('compass');
+	let dragging=false, rect=null;
+
+	function update(e){
+		if(!dragging) return;
+		const pt = (e.touches && e.touches[0])? e.touches[0] : e;
+		const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+		let dx=pt.clientX - cx, dy=pt.clientY - cy;
+		const maxR=Math.min(rect.width,rect.height)/2-16;
+		let r=Math.hypot(dx,dy);
+		if(r>maxR){dx*=maxR/r; dy*=maxR/r; r=maxR;}
+		const xn = (dx/maxR), yn = (dy/maxR);
+		setTargetFromPad(dx,dy,Math.hypot(xn,yn));
+		const left = 50 + xn*50;
+		const top  = 50 + yn*50;
+		puck.style.left=left+"%"; puck.style.top=top+"%";
+	}
+
+	pad.addEventListener('pointerdown',e=>{rect=comp.getBoundingClientRect(); dragging=true; pad.setPointerCapture(e.pointerId); update(e);});
+	pad.addEventListener('pointermove',update);
+	pad.addEventListener('pointerup',e=>{dragging=false; pad.releasePointerCapture(e.pointerId);});
+	pad.addEventListener('pointercancel',()=>dragging=false);
+
+	// touch fallback
+	pad.addEventListener('touchstart',e=>{rect=comp.getBoundingClientRect(); dragging=true; update(e);},{passive:true});
+	pad.addEventListener('touchmove',update,{passive:true});
+	pad.addEventListener('touchend',()=>dragging=false);
+}
+
+function wireTransport(){
+	const startBtn=document.getElementById('startBtn');
+	const stopBtn=document.getElementById('stopBtn');
+	const status=document.getElementById('status');
+
+	startBtn.addEventListener('click',async()=>{
+		if(!ctx) buildAudio();
+		if(ctx.state!=="running") await ctx.resume();
+		global.started=true; updateAllFrequencies();
+		status.textContent='playing'; status.style.background='#0a2b2b'; startBtn.classList.add('on');
+	});
+	stopBtn.addEventListener('click',()=>{
+		if(!ctx) return;
+		global.started=false; global.voices.forEach(v=>v.fadeTo(0,.2));
+		status.textContent='stopped'; document.getElementById('meter').textContent='–∞ dB';
+		document.getElementById('startBtn').classList.remove('on');
+	});
+}
+
+function startMeter(){
+	function loop(){
+		if(ctx && global.started){
+			meterNode.getFloatTimeDomainData(meterBuf);
+			let sum=0; for(let i=0;i<meterBuf.length;i++) sum+=meterBuf[i]*meterBuf[i];
+			const rms=Math.sqrt(sum/meterBuf.length);
+			const db=20*Math.log10(rms||1e-8);
+			document.getElementById('meter').textContent=(db<-60?'–∞':db.toFixed(1)+' dB');
+		}
+		requestAnimationFrame(loop);
+	}
+	loop();
+}
+
+/* ====== Boot ====== */
+wireCompass();
+wireTransport();
+startMeter();
+</script>
+</body>
+</html>
