@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Organic Deep Drone</title>
+<title>Organic Deep String Drone</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <style>
 	body{
@@ -67,9 +67,10 @@
 </head>
 <body>
 <div class="wrap">
-	<h1>Organic Deep Drone</h1>
+	<h1>Organic Deep String Drone</h1>
 	<div class="row">
 		<button id="start">Start / Resume</button>
+		<button id="stop">Stop</button>
 	</div>
 	<div class="row">
 		<button id="low">Low</button>
@@ -77,8 +78,8 @@
 		<button id="high">High</button>
 	</div>
 	<div class="row">
-		<label>Bow / Grit
-			<input id="bow" type="range" min="0" max="1" step="0.001" value="0.35">
+		<label>Bow / Bite
+			<input id="bow" type="range" min="0" max="1" step="0.001" value="0.4">
 		</label>
 	</div>
 	<div class="row">
@@ -93,74 +94,102 @@
 		</label>
 	</div>
 	<div class="note">
-		Phone-friendly deep string drone. Use sliders slowly.
+		Deep procedural drone. Bow adds stringy bite, not just hiss.
 	</div>
 </div>
 
 <script>
 let ctx, master;
 const voices = [];
-let targetBase = 65; // starting center freq
+let noiseBuffer = null;
+
+let targetBase = 65; // global target fundamental
 let baseFreq = 65;
 
-// Utility: create a looping noise buffer once
-let noiseBuffer = null;
-function getNoiseBuffer() {
+// UI
+const bowEl = document.getElementById("bow");
+const densityEl = document.getElementById("density");
+const driftEl = document.getElementById("drift");
+const airEl = document.getElementById("air");
+
+function getNoiseBuffer(audioCtx){
 	if (noiseBuffer) return noiseBuffer;
-	const rate = 44100;
+	const rate = audioCtx.sampleRate || 44100;
 	const length = rate * 2;
-	noiseBuffer = (ctx || new AudioContext()).createBuffer(1, length, rate);
+	noiseBuffer = audioCtx.createBuffer(1, length, rate);
 	const d = noiseBuffer.getChannelData(0);
 	for (let i = 0; i < length; i++) {
-		d[i] = (Math.random() * 2 - 1) * 0.6;
+		d[i] = (Math.random() * 2 - 1) * 0.7;
 	}
 	return noiseBuffer;
 }
 
-function createVoice(offsetCents = 0) {
+function makeWaveshaper(amount){
+	const n = 1024;
+	const curve = new Float32Array(n);
+	const k = amount;
+	for (let i = 0; i < n; i++) {
+		let x = (i / (n - 1)) * 2 - 1;
+		// soft saturation with a bit of edge
+		curve[i] = Math.tanh(x * k);
+	}
+	return curve;
+}
+
+function clamp01(x){ return x < 0 ? 0 : x > 1 ? 1 : x; }
+
+function createVoice(offsetCents = 0){
 	const v = {};
 	v.gain = ctx.createGain();
 	v.gain.gain.value = 0.0;
 
-	// === FRICTION / BOW NOISE (COLORED) ===
+	// === Noise / friction source ===
 	v.noise = ctx.createBufferSource();
-	v.noise.buffer = getNoiseBuffer();
+	v.noise.buffer = getNoiseBuffer(ctx);
 	v.noise.loop = true;
 
-	// Low-mid friction band around base*2 (body-ish)
-	v.fricBP = ctx.createBiquadFilter();
+	// Colored friction:
+	v.fricBP = ctx.createBiquadFilter(); // main rosin band
 	v.fricBP.type = "bandpass";
-	v.fricBP.frequency.value = 400; // will be retuned
-	v.fricBP.Q.value = 1.2;
+	v.fricBP.frequency.value = 400;
+	v.fricBP.Q.value = 1.4;
 
-	// Soft LP to keep it warm, not hissy
-	v.fricLP = ctx.createBiquadFilter();
+	v.fricLP = ctx.createBiquadFilter(); // tame highs
 	v.fricLP.type = "lowpass";
 	v.fricLP.frequency.value = 2800;
 	v.fricLP.Q.value = 0.7;
 
-	// Tiny "hair" band for subtle scratch, very low level
-	v.hairBP = ctx.createBiquadFilter();
+	v.hairBP = ctx.createBiquadFilter(); // tiny scratch band
 	v.hairBP.type = "bandpass";
-	v.hairBP.frequency.value = 3500;
-	v.hairBP.Q.value = 3.5;
+	v.hairBP.frequency.value = 3400;
+	v.hairBP.Q.value = 4.0;
 
 	v.noiseGain = ctx.createGain();
-	v.noiseGain.gain.value = 0.0; // controlled by bow
+	v.noiseGain.gain.value = 0.0; // base friction level set later
 
+	// route noise
 	v.noise.connect(v.fricBP);
 	v.fricBP.connect(v.fricLP);
 	v.fricLP.connect(v.noiseGain);
 
 	v.noise.connect(v.hairBP);
 	const hairGain = ctx.createGain();
-	hairGain.gain.value = 0.02;
+	hairGain.gain.value = 0.015; // very subtle
 	v.hairBP.connect(hairGain);
 	hairGain.connect(v.noiseGain);
 
-	// === PARTIALS: DEEP, SLIGHTLY INHARMONIC CLUSTER ===
+	// === Bow-locked AM on friction (stringy bite) ===
+	v.bowAM = ctx.createOscillator();
+	v.bowAM.frequency.value = baseFreq * 2;
+	v.bowAMGain = ctx.createGain();
+	v.bowAMGain.gain.value = 0.0; // depth set by bow
+
+	v.bowAM.connect(v.bowAMGain);
+	v.bowAMGain.connect(v.noiseGain.gain);
+
+	// === Harmonic cluster ===
 	v.partials = [];
-	const ratios = [1, 2.01, 3.0, 4.03, 5.0, 6.1]; // small inharmonic offsets
+	const ratios = [1.0, 2.01, 3.0, 4.03, 5.1, 6.0];
 	ratios.forEach((r, idx) => {
 		const osc = ctx.createOscillator();
 		osc.type = "sine";
@@ -172,152 +201,168 @@ function createVoice(offsetCents = 0) {
 			osc,
 			gain: g,
 			ratio: r,
-			ampRandom: 0.9 + Math.random() * 0.2,
+			ampRandom: 0.8 + Math.random() * 0.3,
 			detune: offsetCents + (Math.random() - 0.5) * 3
 		});
 	});
 
-	// === BODY RESONANCES (PARALLEL BPF) ===
+	// === Body resonances ===
 	const modeFreqs = [220, 420, 650, 980, 1550, 2300];
 	v.bodyFilters = modeFreqs.map(f => {
 		const b = ctx.createBiquadFilter();
 		b.type = "bandpass";
 		b.frequency.value = f;
-		b.Q.value = 3.2;
+		b.Q.value = 3.0;
 		return b;
 	});
 
 	const bodyMix = ctx.createGain();
-	bodyMix.gain.value = 0.9;
+	bodyMix.gain.value = 1.0;
 
-	// Sum noise + partials into body
+	// feed noise + partials into body
 	v.noiseGain.connect(bodyMix);
 	v.partials.forEach(p => p.gain.connect(bodyMix));
 
-	// Body filters in parallel, mixed
 	const bodyOut = ctx.createGain();
-	bodyOut.gain.value = 0.9;
+	bodyOut.gain.value = 1.0;
+
 	v.bodyFilters.forEach(b => {
 		bodyMix.connect(b);
 		b.connect(bodyOut);
 	});
 
-	// === SIMPLE SPACE (SHORT FEEDBACK DELAY) ===
+	// === Gentle saturation path (bow -> bite) ===
+	v.satPre = ctx.createGain();
+	v.satPre.gain.value = 1.0;
+
+	v.satWS = ctx.createWaveShaper();
+	v.satWS.curve = makeWaveshaper(2.5);
+	v.satWS.oversample = "4x";
+
+	v.satMix = ctx.createGain();
+	v.satMix.gain.value = 0.08; // base bite amount
+
+	bodyOut.connect(v.satPre);
+	v.satPre.connect(v.satWS);
+	v.satWS.connect(v.satMix);
+
+	// === Short feedback space ===
 	const delay = ctx.createDelay(0.25);
-	delay.delayTime.value = 0.06 + Math.random() * 0.01;
+	delay.delayTime.value = 0.055 + Math.random() * 0.008;
 	const fb = ctx.createGain();
-	fb.gain.value = 0.22;
+	fb.gain.value = 0.21;
 	bodyOut.connect(delay);
 	delay.connect(fb);
 	fb.connect(delay);
 
 	const wet = ctx.createGain();
-	wet.gain.value = 0.25;
+	wet.gain.value = 0.23;
 	delay.connect(wet);
 
 	const dry = ctx.createGain();
 	dry.gain.value = 1.0;
 	bodyOut.connect(dry);
 
+	// Mix: warm body + space + saturation
 	dry.connect(v.gain);
 	wet.connect(v.gain);
+	v.satMix.connect(v.gain);
+
 	v.gain.connect(master);
 
 	v.noise.start();
+	v.bowAM.start();
 
-	// State for slow evolution
 	v.f0 = baseFreq;
 	v.targetF0 = baseFreq * (1 + (offsetCents / 1200));
-	v.phase = Math.random() * 1000;
 
 	voices.push(v);
 	return v;
 }
 
-function retuneVoice(v, dt) {
+function retuneVoice(v){
 	const now = ctx.currentTime;
-	// smooth base freq towards target
-	v.f0 += (v.targetF0 - v.f0) * 0.01;
-
 	const density = parseFloat(densityEl.value);
 	const drift = parseFloat(driftEl.value);
+	const bow = parseFloat(bowEl.value);
 
-	// partials: random-walk amplitudes + slight detune drift
+	// smooth global base
+	v.f0 += (v.targetF0 - v.f0) * 0.01;
+
+	// harmonic cluster evolution
 	v.partials.forEach((p, idx) => {
-		// base harmonic shape: lower partials stronger
 		const baseAmp = (1 / Math.pow(idx + 1, 1.15)) * (0.5 + 0.7 * density);
-		// small random walk
 		const jitter = (Math.random() - 0.5) * 0.02 * drift;
 		p.ampRandom = clamp01(p.ampRandom + jitter);
 		const amp = baseAmp * (0.6 + 0.4 * p.ampRandom);
-		p.gain.gain.linearRampToValueAtTime(amp, now + 0.04);
+		p.gain.gain.linearRampToValueAtTime(amp, now + 0.06);
 
-		// freq & detune: tiny motion
 		const detuneDrift = (Math.random() - 0.5) * 0.2 * drift;
-		p.detune += detuneDrift;
-		p.detune = Math.max(-12, Math.min(12, p.detune));
+		p.detune = Math.max(-14, Math.min(14, p.detune + detuneDrift));
 
 		const freq = v.f0 * p.ratio;
-		p.osc.frequency.linearRampToValueAtTime(freq, now + 0.05);
-		p.osc.detune.linearRampToValueAtTime(p.detune, now + 0.05);
+		p.osc.frequency.linearRampToValueAtTime(freq, now + 0.06);
+		p.osc.detune.linearRampToValueAtTime(p.detune, now + 0.06);
 	});
 
-	// retune friction bands around current f0
-	const bowVal = parseFloat(bowEl.value);
+	// bow-locked AM: ties friction to string rate for bite
 	const fricCenter = v.f0 * 2.2;
 	v.fricBP.frequency.linearRampToValueAtTime(
 		Math.max(120, Math.min(1200, fricCenter)),
-		now + 0.05
+		now + 0.06
 	);
 
-	// bow / grit gain: subtle, proportional & curved
-	const baseFric = 0.005 + bowVal * 0.06;
-	v.noiseGain.gain.linearRampToValueAtTime(baseFric, now + 0.03);
+	// base friction level + bow control
+	const baseFric = 0.003 + bow * 0.055;
+	v.noiseGain.gain.setTargetAtTime(baseFric, now, 0.03);
 
-	// body modes drift slightly with drift param
-	v.bodyFilters.forEach((b, i) => {
-		const wobble = 1 + ((Math.random() - 0.5) * 0.01 * drift);
+	// AM depth increases with bow for scratchiness
+	const amDepth = bow * 0.035;
+	v.bowAM.frequency.linearRampToValueAtTime(v.f0 * 2, now + 0.06);
+	v.bowAMGain.gain.linearRampToValueAtTime(amDepth, now + 0.06);
+
+	// saturation drive & mix track bow (more bow = more edge)
+	const preGain = 1.0 + bow * 6.0;
+	const satLevel = 0.04 + bow * 0.3;
+	v.satPre.gain.linearRampToValueAtTime(preGain, now + 0.05);
+	v.satMix.gain.linearRampToValueAtTime(satLevel, now + 0.05);
+
+	// body modes: subtle detuning motion
+	v.bodyFilters.forEach((b) => {
+		const wobble = 1 + ((Math.random() - 0.5) * 0.012 * drift);
 		const f = b.frequency.value * wobble;
-		b.frequency.linearRampToValueAtTime(f, now + 0.08);
+		b.frequency.linearRampToValueAtTime(f, now + 0.09);
 	});
 
-	// overall voice gain
-	const voiceLevel = 0.5 + 0.3 * density;
-	v.gain.gain.linearRampToValueAtTime(voiceLevel / voices.length, now + 0.05);
+	// overall level per voice
+	const voiceLevel = (0.5 + 0.35 * density) / voices.length;
+	v.gain.gain.linearRampToValueAtTime(voiceLevel, now + 0.08);
 }
 
-function clamp01(x){ return x < 0 ? 0 : x > 1 ? 1 : x; }
-
-// === MAIN LOOP: SLOW EVOLUTION ===
 let lastTime = null;
-function loop(t) {
-	if (!ctx) return;
+function loop(t){
+	if (!ctx || ctx.state !== "running") return;
+
 	if (!lastTime) lastTime = t;
-	const dt = (t - lastTime) / 1000;
 	lastTime = t;
 
-	// ease base freq towards targetBase
+	// glide global base frequency
 	baseFreq += (targetBase - baseFreq) * 0.004;
 
 	const air = parseFloat(airEl.value);
-	master.gain.linearRampToValueAtTime(0.7 + air * 0.2, ctx.currentTime + 0.05);
+	const now = ctx.currentTime;
+	master.gain.linearRampToValueAtTime(0.6 + air * 0.25, now + 0.05);
 
 	voices.forEach(v => {
-		// gently lock each voice target to global base with slight offset
-		v.targetF0 = baseFreq * (1 + ((Math.random() - 0.5) * 0.002));
-		retuneVoice(v, dt);
+		// keep each voice slightly offset from global
+		v.targetF0 = baseFreq * (1 + ((Math.random() - 0.5) * 0.0015));
+		retuneVoice(v);
 	});
 
-	// use ~60fps; internal changes are smoothed so no zippering
 	requestAnimationFrame(loop);
 }
 
-// === UI WIRING ===
-const bowEl = document.getElementById("bow");
-const densityEl = document.getElementById("density");
-const driftEl = document.getElementById("drift");
-const airEl = document.getElementById("air");
-
+// Start / Resume
 document.getElementById("start").onclick = async () => {
 	if (!ctx) {
 		ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -325,33 +370,48 @@ document.getElementById("start").onclick = async () => {
 		master.gain.value = 0.0;
 		master.connect(ctx.destination);
 
-		// three slightly offset voices
+		// ensemble of 3 voices with tiny detune offsets
 		createVoice(-4);
 		createVoice(0);
 		createVoice(3);
 
-		// fade in
 		const now = ctx.currentTime;
-		master.gain.linearRampToValueAtTime(0.8, now + 3.0);
+		master.gain.linearRampToValueAtTime(0.8, now + 2.5);
 
 		requestAnimationFrame(loop);
-	} else if (ctx.state !== "running") {
-		await ctx.resume();
+	} else {
+		if (ctx.state !== "running") {
+			await ctx.resume();
+			requestAnimationFrame(loop);
+		}
 	}
 };
 
-// base frequency macros: smooth shifts, no attacks
+// Stop (fade out and suspend)
+document.getElementById("stop").onclick = () => {
+	if (!ctx) return;
+	const now = ctx.currentTime;
+	master.gain.cancelScheduledValues(now);
+	master.gain.linearRampToValueAtTime(0.0, now + 1.0);
+	setTimeout(() => {
+		if (ctx && ctx.state === "running") {
+			ctx.suspend();
+		}
+	}, 1100);
+};
+
+// Base pitch macros
 document.getElementById("low").onclick = () => {
 	if (!ctx) return;
-	targetBase = 45;  // lower, sub weight
+	targetBase = 45;
 };
 document.getElementById("mid").onclick = () => {
 	if (!ctx) return;
-	targetBase = 70;  // warm mid
+	targetBase = 70;
 };
 document.getElementById("high").onclick = () => {
 	if (!ctx) return;
-	targetBase = 110; // higher drone, still rich
+	targetBase = 110;
 };
 </script>
 </body>
