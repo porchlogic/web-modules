@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Group Glide — Single-Note Rider Synth</title>
+<style>
+	:root{
+		--bg:#0b0f14;--panel:#121826;--line:#1f2a3a;--text:#e8eef6;--muted:#9fb0c7;--accent:#4fb38f;--danger:#e57373
+	}
+	html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px system-ui,-apple-system,Segoe UI,Roboto}
+	.wrap{max-width:560px;margin:0 auto;padding:14px}
+	h1{font-size:18px;margin:6px 0 10px;font-weight:600}
+	.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
+	.row{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+	label{color:var(--muted);font-size:12px}
+	input[type=range]{width:100%}
+	select, input[type=number]{
+		width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:#0f1420;color:var(--text)
+	}
+	button{
+		appearance:none;border:1px solid var(--line);background:#0f1420;color:var(--text);
+		padding:12px;border-radius:12px;cursor:pointer;width:100%
+	}
+	.btnbar{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+	.primary{background:var(--accent);border-color:#2f7f64;color:#07140f;font-weight:700}
+	.danger{background:#221417;border-color:#5c2a31;color:#ffd8d8}
+	.small{color:var(--muted);font-size:12px}
+	.readout{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums}
+	.mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+	.badge{display:inline-block;background:#0f1420;border:1px solid var(--line);padding:2px 8px;border-radius:999px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+	<h1>Group Glide — Single-Note Rider Synth</h1>
+
+	<div class="card">
+		<div class="btnbar">
+			<button id="startBtn" class="primary">Start</button>
+			<button id="stopBtn" class="danger">Stop</button>
+		</div>
+		<div class="row small">
+			<div class="readout">
+				<div>Note: <span id="noteDisp" class="badge mono">—</span></div>
+				<div>Hz: <span id="hzDisp" class="mono">—</span></div>
+			</div>
+		</div>
+	</div>
+
+	<div class="card">
+		<div class="row">
+			<label>Acceleration (springs back to center)</label>
+			<input id="accel" type="range" min="-1" max="1" step="0.001" value="0">
+			<div class="readout small">
+				<span>Decel</span><span>Neutral</span><span>Accel</span>
+			</div>
+			<div class="small">Tip: tap/drag right to bump pitch up the scale; left to bump down. Release to auto-center.</div>
+		</div>
+
+		<div class="row">
+			<label>Home Region (neutral note area within current range)</label>
+			<input id="home" type="range" min="0" max="1" step="0.001" value="0.35">
+			<div class="readout small">
+				<span>Lower</span><span>—</span><span>Higher</span>
+			</div>
+		</div>
+	</div>
+
+	<div class="card">
+		<div class="row">
+			<label>Root / Scale</label>
+			<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+				<select id="root"></select>
+				<select id="scale"></select>
+			</div>
+		</div>
+
+		<div class="row">
+			<label>Octave Span</label>
+			<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+				<select id="baseOct">
+					<option value="2">2</option>
+					<option value="3" selected>3</option>
+					<option value="4">4</option>
+				</select>
+				<select id="octSpan">
+					<option value="1">1 octave</option>
+					<option value="2" selected>2 octaves</option>
+					<option value="3">3 octaves</option>
+				</select>
+			</div>
+			<div class="small">At rest the note comes from this window; accel moves within it.</div>
+		</div>
+
+		<div class="row">
+			<label>Response Feel</label>
+			<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+				<div>
+					<span class="small">Glide (ms)</span>
+					<input id="glideMs" type="range" min="10" max="1200" step="10" value="220">
+				</div>
+				<div>
+					<span class="small">Spring (fps)</span>
+					<input id="spring" type="range" min="10" max="120" step="1" value="45">
+				</div>
+			</div>
+		</div>
+
+		<div class="row">
+			<label>Tone</label>
+			<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+				<div>
+					<span class="small">Brightness</span>
+					<input id="bright" type="range" min="400" max="8000" step="1" value="2500">
+				</div>
+				<div>
+					<span class="small">Air</span>
+					<input id="air" type="range" min="0" max="1" step="0.001" value="0.08">
+				</div>
+			</div>
+			<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+				<div>
+					<span class="small">Reverb</span>
+					<input id="rev" type="range" min="0" max="1" step="0.001" value="0.45">
+				</div>
+				<div>
+					<span class="small">Output</span>
+					<input id="out" type="range" min="0" max="1" step="0.001" value="0.9">
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<p class="small">Each rider runs this page and outputs a single morphing note. Use different <b>Home Region</b> positions across the group to form a resting chord; accelerations/decelerations create musical motion while staying in-scale.</p>
+</div>
+
+<script>
+(() => {
+	// ---------- Music helpers ----------
+	const A4 = 440;
+	const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+	const noteIndex = Object.fromEntries(NOTES.map((n,i)=>[n,i]));
+	const midiToFreq = m => A4 * Math.pow(2, (m-69)/12);
+	const clamp = (v,min,max)=>Math.min(max,Math.max(min,v));
+	const lerp = (a,b,t)=>a+(b-a)*t;
+
+	const SCALES = {
+		"Ionian (Major)":[0,2,4,5,7,9,11],
+		"Dorian":[0,2,3,5,7,9,10],
+		"Phrygian":[0,1,3,5,7,8,10],
+		"Lydian":[0,2,4,6,7,9,11],
+		"Mixolydian":[0,2,4,5,7,9,10],
+		"Aeolian (Natural Minor)":[0,2,3,5,7,8,10],
+		"Harmonic Minor":[0,2,3,5,7,8,11],
+		"Whole Tone":[0,2,4,6,8,10],
+		"Octatonic (HW)":[0,1,3,4,6,7,9,10]
+	};
+
+	// Build a list of scale degrees across N octaves starting at root/baseOct
+	function buildScaleTable(rootName, baseOct, octSpan, scaleName){
+		const rootSemis = noteIndex[rootName] + baseOct*12;
+		const degs = SCALES[scaleName];
+		const out = [];
+		for(let o=0;o<octSpan;o++){
+			for(const d of degs) out.push(rootSemis + d + o*12);
+		}
+		return out; // MIDI numbers
+	}
+
+	// ---------- Audio graph (mono voice with gentle animation) ----------
+	let ctx, master, lowpass, airGain, reverbSend, convolver, noise, outGain;
+	let oscA, oscB, cross = 0, crossGainA, crossGainB, currentFreq = 0, targetFreq = 0, lastStepMidi = null;
+	let running = false, rafId = null, springTimer = null;
+
+	function makeReverbImpulse(seconds=2.7, decay=2.2){
+		const rate = ctx.sampleRate, len = Math.max(1,(seconds*rate)|0);
+		const buf = ctx.createBuffer(2,len,rate);
+		for(let ch=0; ch<2; ch++){
+			const d = buf.getChannelData(ch);
+			for(let i=0;i<len;i++){
+				const t = i/len, env = Math.pow(1 - t, decay);
+				d[i] = (Math.random()*2-1) * env;
+			}
+		}
+		return buf;
+	}
+
+	function setup(){
+		ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});
+
+		// Osc pair with crossfade to hide clicks when jumping steps
+		oscA = ctx.createOscillator(); oscB = ctx.createOscillator();
+		oscA.type = "triangle"; oscB.type="sawtooth";
+		crossGainA = ctx.createGain(); crossGainB = ctx.createGain();
+		crossGainA.gain.value = 1; crossGainB.gain.value = 0;
+		oscA.connect(crossGainA); oscB.connect(crossGainB);
+
+		// Tone
+		lowpass = ctx.createBiquadFilter(); lowpass.type="lowpass"; lowpass.frequency.value = 2500;
+		const mildSat = ctx.createWaveShaper();
+		mildSat.curve = (()=>{
+			const n=256, c=new Float32Array(n);
+			for(let i=0;i<n;i++){ const x=i/(n-1)*2-1; c[i] = Math.tanh(1.6*x); }
+			return c;
+		})();
+		airGain = ctx.createGain(); airGain.gain.value = 0.08;
+
+		// Air (filtered noise)
+		noise = ctx.createBufferSource();
+		const nbuf = ctx.createBuffer(1, ctx.sampleRate*2, ctx.sampleRate);
+		const nd = nbuf.getChannelData(0);
+		for(let i=0;i<nd.length;i++) nd[i] = (Math.random()*2-1);
+		noise.buffer = nbuf; noise.loop = true;
+		const airBP = ctx.createBiquadFilter(); airBP.type="bandpass"; airBP.Q.value=0.6; airBP.frequency.value=5000;
+
+		// Reverb
+		reverbSend = ctx.createGain(); reverbSend.gain.value = 0.45;
+		convolver = ctx.createConvolver(); convolver.buffer = makeReverbImpulse();
+		const revGain = ctx.createGain(); revGain.gain.value = 1.0;
+
+		// Output
+		outGain = ctx.createGain(); outGain.gain.value = 0.9;
+		master = ctx.createGain(); master.gain.value = 1.0;
+
+		// Routing
+		const mix = ctx.createGain();
+		crossGainA.connect(mix); crossGainB.connect(mix);
+		mix.connect(mildSat).connect(lowpass).connect(outGain).connect(master).connect(ctx.destination);
+		mix.connect(reverbSend).connect(convolver).connect(revGain).connect(master);
+		noise.connect(airBP).connect(airGain).connect(master);
+
+		oscA.start(); oscB.start(); noise.start();
+	}
+
+	function setBrightness(hz){ if(!ctx) return; lowpass.frequency.setTargetAtTime(hz, ctx.currentTime, 0.1); }
+	function setAir(a){ if(!ctx) return; airGain.gain.setTargetAtTime(a, ctx.currentTime, 0.15); }
+	function setReverb(a){ if(!ctx) return; reverbSend.gain.setTargetAtTime(a, ctx.currentTime, 0.2); }
+	function setOutput(a){ if(!ctx) return; outGain.gain.setTargetAtTime(a, ctx.currentTime, 0.05); }
+
+	// Smoothly retune using portamento; alternate oscillators and crossfade on step changes
+	function glideTo(freq, glideMs){
+		if(!ctx) return;
+		const now = ctx.currentTime, glide = Math.max(0.01, glideMs/1000);
+		// choose active osc to retune (the one currently lower in gain), then crossfade
+		const useB = crossGainA.gain.value > crossGainB.gain.value;
+		const osc = useB ? oscB : oscA;
+		const gOn = useB ? crossGainB : crossGainA;
+		const gOff= useB ? crossGainA : crossGainB;
+
+		osc.frequency.cancelScheduledValues(now);
+		osc.frequency.setTargetAtTime(freq, now, glide*0.25);
+
+		gOn.gain.cancelScheduledValues(now);
+		gOff.gain.cancelScheduledValues(now);
+		gOn.gain.setTargetAtTime(1, now, glide*0.6);
+		gOff.gain.setTargetAtTime(0, now, glide*0.6);
+
+		currentFreq = freq;
+	}
+
+	// ---------- UI wiring ----------
+	const $ = s=>document.querySelector(s);
+	const noteDisp = $('#noteDisp'), hzDisp = $('#hzDisp');
+	const accel = $('#accel'), home = $('#home');
+	const rootSel = $('#root'), scaleSel = $('#scale');
+	const baseOct = $('#baseOct'), octSpan = $('#octSpan');
+	const glideMs = $('#glideMs'), spring = $('#spring');
+	const bright = $('#bright'), air = $('#air'), rev = $('#rev'), out = $('#out');
+	const startBtn = $('#startBtn'), stopBtn = $('#stopBtn');
+
+	// Populate selects
+	(function initMenus(){
+		for(const n of NOTES){ const o=document.createElement('option'); o.textContent=n; rootSel.appendChild(o); }
+		rootSel.value = "D";
+		for(const s of Object.keys(SCALES)){ const o=document.createElement('option'); o.textContent=s; scaleSel.appendChild(o); }
+		scaleSel.value = "Dorian";
+	})();
+
+	let state = {
+		root: "D",
+		scale: "Dorian",
+		baseOct: 3,
+		octSpan: 2,
+		table: [],    // MIDI numbers across window
+		home: 0.35,   // 0..1
+		accel: 0,     // -1..1
+		glideMs: 220,
+		brightness: 2500,
+		air: 0.08,
+		reverb: 0.45,
+		output: 0.9
+	};
+
+	function rebuildTable(){
+		state.table = buildScaleTable(state.root, state.baseOct, state.octSpan, state.scale);
+		if(state.table.length < 2){ state.table.push(state.table[0]+12); }
+		// On table change, snap current target to new nearest
+		updatePitch(true);
+	}
+
+	function indexFromHome(home01){
+		const maxIdx = state.table.length - 1;
+		return clamp(Math.round(home01 * maxIdx), 0, maxIdx);
+	}
+
+	function applyAccelToIndex(homeIdx, accelVal){
+		// Map accel (-1..1) to a step offset across ~40% of the table length
+		const span = Math.max(1, Math.round(state.table.length * 0.4));
+		const offset = Math.round(accelVal * span);
+		return clamp(homeIdx + offset, 0, state.table.length-1);
+	}
+
+	function midiToNiceName(m){
+		const n = m % 12; const oct = Math.floor(m/12)-1;
+		return `${NOTES[(n+12)%12]}${oct}`;
+	}
+
+	function updateReadout(midi, freq){
+		if(midi!=null) noteDisp.textContent = midiToNiceName(midi);
+		hzDisp.textContent = freq ? freq.toFixed(2) : "—";
+	}
+
+	function updatePitch(force=false){
+		if(!state.table.length) return;
+		const homeIdx = indexFromHome(state.home);
+		const idx = applyAccelToIndex(homeIdx, state.accel);
+		const midi = state.table[idx];
+		const freq = midiToFreq(midi);
+		targetFreq = freq;
+
+		// Only retune when step changes or on force
+		if(force || midi !== lastStepMidi){
+			lastStepMidi = midi;
+			glideTo(freq, state.glideMs);
+			updateReadout(midi, freq);
+		}
+	}
+
+	// Spring logic: when user not dragging, gently decay accel toward 0
+	let dragging = false;
+	function startSpringLoop(){
+		if(springTimer) return;
+		const fps = clamp(parseInt(spring.value,10)||45,10,120);
+		const dt = 1000/fps;
+		springTimer = setInterval(()=>{
+			if(dragging) return;
+			// critically-damped-ish exponential approach to 0
+			state.accel = lerp(state.accel, 0, 0.18);
+			if(Math.abs(state.accel) < 0.002) state.accel = 0;
+			accel.value = state.accel.toFixed(3);
+			updatePitch();
+		}, dt);
+	}
+
+	function stopSpringLoop(){
+		if(springTimer){ clearInterval(springTimer); springTimer=null; }
+	}
+
+	// Events
+	accel.addEventListener('pointerdown', () => { dragging=true; });
+	accel.addEventListener('pointerup',   () => { dragging=false; });
+	accel.addEventListener('pointercancel',() => { dragging=false; });
+	accel.addEventListener('input', e => { state.accel = +e.target.value; updatePitch(); });
+
+	home.addEventListener('input', e => { state.home = +e.target.value; updatePitch(true); });
+
+	rootSel.addEventListener('input', e => { state.root = e.target.value; rebuildTable(); });
+	scaleSel.addEventListener('input', e => { state.scale = e.target.value; rebuildTable(); });
+	baseOct.addEventListener('input', e => { state.baseOct = parseInt(e.target.value,10); rebuildTable(); });
+	octSpan.addEventListener('input', e => { state.octSpan = parseInt(e.target.value,10); rebuildTable(); });
+
+	glideMs.addEventListener('input', e => { state.glideMs = +e.target.value; });
+	spring.addEventListener('input', () => { stopSpringLoop(); startSpringLoop(); });
+
+	bright.addEventListener('input', e => { state.brightness = +e.target.value; setBrightness(state.brightness); });
+	air.addEventListener('input', e => { state.air = +e.target.value; setAir(state.air); });
+	rev.addEventListener('input', e => { state.reverb = +e.target.value; setReverb(state.reverb); });
+	out.addEventListener('input', e => { state.output = +e.target.value; setOutput(state.output); });
+
+	startBtn.addEventListener('click', () => {
+		if(!ctx) setup();
+		ctx.resume();
+		running = true;
+		setBrightness(state.brightness);
+		setAir(state.air);
+		setReverb(state.reverb);
+		setOutput(state.output);
+		rebuildTable();
+		startSpringLoop();
+		cancelAnimationFrame(rafId);
+		const loop = () => {
+			if(!running) return;
+			rafId = requestAnimationFrame(loop);
+		};
+		loop();
+	});
+
+	stopBtn.addEventListener('click', () => {
+		running = false;
+		cancelAnimationFrame(rafId);
+		stopSpringLoop();
+		// keep context for quick restart; fade output
+		if(outGain){ outGain.gain.setTargetAtTime(0, ctx.currentTime, 0.08); }
+		setTimeout(()=>{ if(outGain) outGain.gain.setTargetAtTime(state.output, ctx.currentTime, 0.08); }, 300);
+	});
+
+	// Mobile unlock
+	document.addEventListener('touchend', () => { if(ctx && ctx.state!=="running") ctx.resume(); }, {passive:true});
+
+	// Initial
+	rebuildTable();
+	updateReadout(null, null);
+	startSpringLoop();
+})();
+</script>
+</body>
+</html>
