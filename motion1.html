@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<title>Accel / Decel Prototype</title>
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<style>
+		:root {
+			color-scheme: dark;
+			font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+			background: #050910;
+			color: #e8eef6;
+		}
+
+		body {
+			margin: 0;
+			min-height: 100vh;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			padding: 16px;
+		}
+
+		.app {
+			width: 100%;
+			max-width: 420px;
+			display: flex;
+			flex-direction: column;
+			gap: 16px;
+		}
+
+		.card {
+			background: radial-gradient(circle at top, #1c2738 0, #0b111b 55%, #050910 100%);
+			border-radius: 16px;
+			padding: 16px 18px 18px;
+			box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65);
+			border: 1px solid rgba(164, 196, 255, 0.14);
+		}
+
+		.card h1 {
+			font-size: 1.2rem;
+			margin: 0 0 6px;
+		}
+
+		.card p {
+			margin: 0;
+			font-size: 0.9rem;
+			color: #a8b4d4;
+		}
+
+		.btn {
+			width: 100%;
+			border-radius: 999px;
+			border: none;
+			padding: 12px 18px;
+			font-size: 1rem;
+			font-weight: 600;
+			background: linear-gradient(135deg, #3abff0, #6366f1);
+			color: #050910;
+			cursor: pointer;
+			outline: none;
+			box-shadow: 0 10px 24px rgba(37, 99, 235, 0.45);
+			transition: transform 0.06s ease, box-shadow 0.06s ease, opacity 0.2s ease;
+		}
+
+		.btn:active {
+			transform: translateY(1px);
+			box-shadow: 0 4px 14px rgba(15, 118, 230, 0.45);
+		}
+
+		.btn[disabled] {
+			opacity: 0.4;
+			cursor: default;
+			box-shadow: none;
+		}
+
+		.meter-card {
+			display: flex;
+			flex-direction: column;
+			gap: 12px;
+		}
+
+		.meter-label-row {
+			display: flex;
+			justify-content: space-between;
+			font-size: 0.8rem;
+			color: #a8b4d4;
+		}
+
+		.meter-wrapper {
+			position: relative;
+			height: 220px;
+			border-radius: 999px;
+			background: radial-gradient(circle at top, #182130 0, #050910 65%);
+			border: 1px solid rgba(148, 163, 235, 0.25);
+			overflow: hidden;
+			display: flex;
+			align-items: stretch;
+		}
+
+		.meter-zero-line {
+			position: absolute;
+			left: 0;
+			right: 0;
+			top: 50%;
+			height: 1px;
+			background: linear-gradient(90deg, transparent, rgba(148, 163, 235, 0.5), transparent);
+			pointer-events: none;
+		}
+
+		.meter-bar {
+			position: absolute;
+			left: 0;
+			right: 0;
+			top: 50%;
+			height: 0%;
+			transform-origin: 50% 0%;
+			background: linear-gradient(
+				to top,
+				rgba(248, 113, 113, 0.1),
+				rgba(248, 113, 113, 0.9)
+			);
+			filter: drop-shadow(0 0 18px rgba(248, 113, 113, 0.7));
+		}
+
+		.meter-bar.accel {
+			background: linear-gradient(
+				to top,
+				rgba(74, 222, 128, 0.1),
+				rgba(74, 222, 128, 0.9)
+			);
+			filter: drop-shadow(0 0 18px rgba(74, 222, 128, 0.8));
+		}
+
+		.readouts {
+			display: flex;
+			flex-direction: column;
+			gap: 6px;
+			font-size: 0.85rem;
+		}
+
+		.readouts-row {
+			display: flex;
+			justify-content: space-between;
+		}
+
+		.readouts-label {
+			color: #a8b4d4;
+		}
+
+		.readouts-value {
+			font-variant-numeric: tabular-nums;
+		}
+
+		.badge {
+			display: inline-flex;
+			align-items: center;
+			gap: 4px;
+			padding: 3px 10px;
+			border-radius: 999px;
+			background: rgba(15, 23, 42, 0.9);
+			border: 1px solid rgba(148, 163, 235, 0.4);
+			font-size: 0.75rem;
+			color: #c7d2fe;
+		}
+
+		.badge-dot {
+			width: 7px;
+			height: 7px;
+			border-radius: 999px;
+			background: #f97316;
+			box-shadow: 0 0 10px #f97316;
+		}
+
+		.badge-dot.good {
+			background: #22c55e;
+			box-shadow: 0 0 10px #22c55e;
+		}
+
+		code {
+			font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+			font-size: 0.75rem;
+			padding: 2px 5px;
+			border-radius: 5px;
+			background: rgba(15, 23, 42, 0.95);
+			color: #e5e7eb;
+		}
+	</style>
+</head>
+<body>
+	<div class="app">
+		<div class="card">
+			<h1>Accel / Decel Meter</h1>
+			<p>
+				Press <strong>Start</strong>, put the phone in your pocket, and move.
+				The app uses GPS speed + accelerometer to learn your forward direction
+				and shows live acceleration (up) and braking (down).
+			</p>
+		</div>
+
+		<div class="card meter-card">
+			<div class="meter-label-row">
+				<div class="badge" id="status-badge">
+					<span class="badge-dot" id="status-dot"></span>
+					<span id="status-text">Idle</span>
+				</div>
+				<span style="font-size:0.75rem;color:#64748b;">
+					GPS + accel → forward accel estimate
+				</span>
+			</div>
+
+			<div class="meter-wrapper">
+				<div class="meter-bar" id="meter-bar"></div>
+				<div class="meter-zero-line"></div>
+			</div>
+
+			<div class="readouts">
+				<div class="readouts-row">
+					<span class="readouts-label">Forward accel (est.)</span>
+					<span class="readouts-value" id="accel-readout">0.00 m/s²</span>
+				</div>
+				<div class="readouts-row">
+					<span class="readouts-label">GPS speed</span>
+					<span class="readouts-value" id="speed-readout">0.00 m/s</span>
+				</div>
+				<div class="readouts-row">
+					<span class="readouts-label">Mapping updates</span>
+					<span class="readouts-value" id="updates-readout">0</span>
+				</div>
+				<div class="readouts-row">
+					<span class="readouts-label">Mode</span>
+					<span class="readouts-value" id="mode-readout">Learning</span>
+				</div>
+			</div>
+		</div>
+
+		<button class="btn" id="start-btn">Start sensors</button>
+
+		<div class="card">
+			<p style="font-size:0.8rem;">
+				Note: needs <code>https://</code> and motion/location permissions.
+				This is a prototype, so expect some rough edges while it "locks in"
+				the forward direction.
+			</p>
+		</div>
+	</div>
+
+	<script>
+		// ----- Basic state -----
+		let accelFiltered = { x: 0, y: 0, z: 0 };
+		let accelReady = false;
+
+		// The learned mapping vector: dot(accel, w) ≈ forward acceleration
+		let w = { x: 0, y: 0, z: 1 }; // init with "z roughly forward" as a guess
+
+		let lastSpeed = null;
+		let lastSpeedTime = null;
+
+		let mappingUpdates = 0;
+		let accelDisplayValue = 0;
+		let running = false;
+
+		// Config
+		const accelAlpha = 0.15;      // low-pass filter for accel
+		const displayAlpha = 0.1;     // low-pass for display
+		const learningRate = 0.04;    // SGD step for mapping
+		const minDt = 0.4;            // min GPS dt for using a speed delta (s)
+		const maxDt = 10;             // max GPS dt (drop if too slow)
+		const minSpeedForLearning = 1.4; // ~5 km/h
+		const maxAccelForDisplay = 5.0;  // clamp display m/s²
+
+		// UI elements
+		const meterBarEl = document.getElementById("meter-bar");
+		const accelReadoutEl = document.getElementById("accel-readout");
+		const speedReadoutEl = document.getElementById("speed-readout");
+		const updatesReadoutEl = document.getElementById("updates-readout");
+		const modeReadoutEl = document.getElementById("mode-readout");
+		const startBtnEl = document.getElementById("start-btn");
+		const statusBadgeEl = document.getElementById("status-badge");
+		const statusDotEl = document.getElementById("status-dot");
+		const statusTextEl = document.getElementById("status-text");
+
+		function setStatus(text, good) {
+			statusTextEl.textContent = text;
+			if (good) {
+				statusDotEl.classList.add("good");
+			} else {
+				statusDotEl.classList.remove("good");
+			}
+		}
+
+		function lowPass(prev, next, alpha) {
+			return prev + alpha * (next - prev);
+		}
+
+		function dot(a, b) {
+			return a.x * b.x + a.y * b.y + a.z * b.z;
+		}
+
+		function normalize(v) {
+			const m = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) || 1;
+			return { x: v.x / m, y: v.y / m, z: v.z / m };
+		}
+
+		// ----- DeviceMotion (accelerometer) -----
+		function handleMotion(event) {
+			if (!running) return;
+
+			// Prefer acceleration excluding gravity if available, else include gravity
+			let a = event.acceleration;
+			if (!a || (a.x === null && a.y === null && a.z === null)) {
+				a = event.accelerationIncludingGravity || { x: 0, y: 0, z: 0 };
+			}
+
+			const ax = a.x || 0;
+			const ay = a.y || 0;
+			const az = a.z || 0;
+
+			if (!accelReady) {
+				accelFiltered.x = ax;
+				accelFiltered.y = ay;
+				accelFiltered.z = az;
+				accelReady = true;
+				return;
+			}
+
+			accelFiltered.x = lowPass(accelFiltered.x, ax, accelAlpha);
+			accelFiltered.y = lowPass(accelFiltered.y, ay, accelAlpha);
+			accelFiltered.z = lowPass(accelFiltered.z, az, accelAlpha);
+		}
+
+		// ----- Geolocation (speed) + learning -----
+		function handlePosition(pos) {
+			if (!running) return;
+
+			const tMs = pos.timestamp;
+			const t = tMs / 1000;
+
+			// speed is in m/s; may be null
+			let speed = pos.coords.speed;
+			if (speed == null || Number.isNaN(speed)) {
+				speed = 0;
+			}
+
+			speedReadoutEl.textContent = speed.toFixed(2) + " m/s";
+
+			if (lastSpeed !== null && accelReady) {
+				const dt = t - lastSpeedTime;
+				if (dt >= minDt && dt <= maxDt) {
+					const dSpeed = speed - lastSpeed;
+					const obsAccel = dSpeed / dt; // observed forward accel from GPS
+
+					// Only learn when we're moving and accel looks reasonable
+					if (Math.abs(obsAccel) > 0.05 && speed > minSpeedForLearning) {
+						const a = accelFiltered;
+
+						// Predict accel using current mapping
+						const pred = dot(a, w);
+						const error = pred - obsAccel;
+
+						// SGD update: w = w - eta * error * a
+						w.x -= learningRate * error * a.x;
+						w.y -= learningRate * error * a.y;
+						w.z -= learningRate * error * a.z;
+
+						// Renormalize occasionally to keep it sane
+						if ((mappingUpdates % 10) === 0) {
+							w = normalize(w);
+						}
+
+						mappingUpdates++;
+						updatesReadoutEl.textContent = mappingUpdates.toString();
+					}
+				}
+			}
+
+			lastSpeed = speed;
+			lastSpeedTime = t;
+
+			// Update mode label once we've learned a bit
+			if (mappingUpdates > 40) {
+				modeReadoutEl.textContent = "Locked (est.)";
+				setStatus("Running", true);
+			} else if (mappingUpdates > 0) {
+				modeReadoutEl.textContent = "Learning";
+				setStatus("Calibrating…", false);
+			}
+		}
+
+		function handlePositionError(err) {
+			console.error("Geolocation error:", err);
+			setStatus("GPS error", false);
+		}
+
+		// ----- Display loop -----
+		function updateDisplay() {
+			if (running && accelReady) {
+				// Estimated forward accel = dot(accel, w)
+				const est = dot(accelFiltered, w);
+
+				// Smooth for display
+				accelDisplayValue = lowPass(accelDisplayValue, est, displayAlpha);
+
+				// Clamp
+				const clamped = Math.max(-maxAccelForDisplay, Math.min(maxAccelForDisplay, accelDisplayValue));
+				const ratio = clamped / maxAccelForDisplay; // -1..1
+
+				// Update meter bar
+				const magnitude = Math.abs(ratio);
+				const percent = magnitude * 100;
+
+				meterBarEl.style.height = percent.toFixed(1) + "%";
+				meterBarEl.style.transform = "translateY(" + (ratio >= 0 ? "-0%" : "0%") + ")";
+				// accel = positive (up), brake = negative (down)
+				if (ratio >= 0) {
+					meterBarEl.classList.add("accel");
+				} else {
+					meterBarEl.classList.remove("accel");
+				}
+
+				// Readout text
+				accelReadoutEl.textContent = clamped.toFixed(2) + " m/s²";
+			}
+
+			requestAnimationFrame(updateDisplay);
+		}
+
+		// ----- Start / permissions -----
+		async function startSensors() {
+			if (running) return;
+			running = true;
+			setStatus("Requesting permissions…", false);
+			startBtnEl.disabled = true;
+
+			try {
+				// iOS motion permission
+				if (typeof DeviceMotionEvent !== "undefined" &&
+					typeof DeviceMotionEvent.requestPermission === "function") {
+					const p = await DeviceMotionEvent.requestPermission();
+					if (p !== "granted") {
+						throw new Error("Motion permission denied");
+					}
+				}
+
+				window.addEventListener("devicemotion", handleMotion);
+
+				if (!("geolocation" in navigator)) {
+					throw new Error("Geolocation not available");
+				}
+
+				navigator.geolocation.watchPosition(
+					handlePosition,
+					handlePositionError,
+					{
+						enableHighAccuracy: true,
+						maximumAge: 500,
+						timeout: 10000
+					}
+				);
+
+				setStatus("Calibrating…", false);
+			} catch (err) {
+				console.error(err);
+				setStatus("Permission error", false);
+				startBtnEl.disabled = false;
+				running = false;
+				return;
+			}
+		}
+
+		startBtnEl.addEventListener("click", startSensors);
+
+		// Kick off the render loop
+		requestAnimationFrame(updateDisplay);
+	</script>
+</body>
+</html>
