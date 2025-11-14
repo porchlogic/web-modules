@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dune-Style Shimmer Synth — Crossfade Note Slider</title>
+<style>
+  :root{--bg:#0b0f14;--panel:#121826;--line:#1f2a3a;--text:#e8eef6;--muted:#9fb0c7;--accent:#4fb38f;--danger:#e57373}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:15px system-ui, -apple-system, Segoe UI, Roboto}
+  .wrap{max-width:980px;margin:0 auto;padding:16px}
+  h1{font-size:18px;margin:8px 0 12px;font-weight:600;letter-spacing:.2px}
+  .col{display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .row{display:flex;flex-direction:column;gap:8px}
+  .row label{color:var(--muted);font-size:13px}
+  .btns{display:flex;gap:10px;flex-wrap:wrap}
+  button{appearance:none;border:1px solid var(--line);background:#0f1420;color:var(--text);padding:10px 14px;border-radius:10px;cursor:pointer}
+  button.primary{background:var(--accent);border-color:#2f7f64;color:#07140f;font-weight:600}
+  button.danger{background:#221417;border-color:#5c2a31;color:#ffd8d8}
+  select, input[type=range]{width:100%}
+  select, input[type=number]{background:#0f1420;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px}
+  input[type=range]{-webkit-appearance:none;height:28px;background:transparent}
+  input[type=range]::-webkit-slider-runnable-track{height:6px;background:#1a2332;border-radius:999px}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;margin-top:-11px;width:28px;height:28px;border-radius:50%;background:#182033;border:1px solid #2a3a55}
+  input[type=range]:focus{outline:none}
+  small{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>“Shimmer in the Sand” — Note-Crossfade Slider</h1>
+
+  <div class="col">
+    <div class="card">
+      <div class="btns">
+        <button id="startBtn" class="primary">Start</button>
+        <button id="stopBtn" class="danger">Stop</button>
+      </div>
+      <small>Drag <b>Note Position</b> slowly or quickly — you’ll hear a smooth gain crossfade between neighboring scale degrees (no pitch glides, no hard switches).</small>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <label>Scale</label>
+        <select id="scaleSel"></select>
+      </div>
+      <div class="row">
+        <label>Root</label>
+        <select id="rootSel"></select>
+      </div>
+      <div class="row">
+        <label>Octave</label>
+        <select id="octSel"><option>1</option><option>2</option><option selected>3</option><option>4</option></select>
+      </div>
+      <div class="row">
+        <label>Note Position (0 → last degree) <small id="noteLabel"></small></label>
+        <!-- high-res: tiny step; we compute smoothing dynamically based on velocity -->
+        <input id="notePos" type="range" min="0" max="7.999" step="0.0005" value="0">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <label>Intensity (master/voice mix)</label>
+        <input id="intensity" type="range" min="0" max="1" step="0.001" value="0.8">
+      </div>
+      <div class="row">
+        <label>Brightness (LPF Hz)</label>
+        <input id="bright" type="range" min="200" max="12000" step="1" value="3500">
+      </div>
+      <div class="row">
+        <label>Reverb</label>
+        <input id="reverb" type="range" min="0" max="1" step="0.001" value="0.55">
+      </div>
+      <div class="row">
+        <label>Noise (sand)</label>
+        <input id="sand" type="range" min="0" max="1" step="0.001" value="0.12">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <label>Cluster Size (partials per degree)</label>
+        <input id="cluster" type="range" min="1" max="8" step="1" value="4">
+      </div>
+      <div class="row">
+        <label>Detune (cents)</label>
+        <input id="detune" type="range" min="0" max="60" step="0.5" value="18">
+      </div>
+      <div class="row">
+        <label>Panning Amount</label>
+        <input id="panAmt" type="range" min="0" max="1" step="0.001" value="0.6">
+      </div>
+      <div class="row">
+        <label>Formant Amount</label>
+        <input id="formantAmt" type="range" min="0" max="1" step="0.001" value="0.7">
+      </div>
+      <div class="row">
+        <label>Formant Morph Speed</label>
+        <input id="formantSpd" type="range" min="0.02" max="1.0" step="0.01" value="0.15">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---------- Utility ----------
+  const A4 = 440;
+  const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+  const noteIndex = Object.fromEntries(NOTES.map((n,i)=>[n,i]));
+  const midiToFreq = m => A4 * Math.pow(2, (m-69)/12);
+  const clamp = (x,a,b)=>Math.min(b,Math.max(a,x));
+
+  // ---------- Scales ----------
+  const SCALES = {
+    "Dorian":[0,2,3,5,7,9,10],
+    "Phrygian":[0,1,3,5,7,8,10],
+    "Harmonic Minor":[0,2,3,5,7,8,11],
+    "Phrygian Dominant":[0,1,4,5,7,8,10],
+    "Octatonic (HW)":[0,1,3,4,6,7,9,10],
+    "Raga-like (Bhupali+)":[0,2,4,7,9,11],
+    "Suspended":[0,2,5,7,9],
+    "Whole Tone":[0,2,4,6,8,10]
+  };
+
+  // Partials (per “degree bus”)
+  const PARTIALS = [
+    {ratio:1,    w:0.90},
+    {ratio:3/2,  w:0.75},
+    {ratio:5/3,  w:0.65},
+    {ratio:7/4,  w:0.50},
+    {ratio:9/8,  w:0.45},
+    {ratio:11/8, w:0.35}
+  ];
+
+  // ---------- State ----------
+  const state = {
+    running:false,
+    root:"D", oct:3, scale:"Phrygian",
+    intensity:0.8, brightness:3500, reverb:0.55, sand:0.12,
+    cluster:4, detune:18, panAmt:0.6,
+    formantAmt:0.7, formantSpd:0.15,
+    notePos:0
+  };
+
+  // ---------- Audio graph ----------
+  let ctx, master, lowpass, reverbSend, convolver, formantBus, sandGain;
+  let degreeBuses = [];  // one bus per degree (gain+panner, with cluster of oscillators)
+  let scaleDegrees = []; // cached scale array for current scale
+  let baseMidiRoot = 0;
+
+  function makeReverbImpulse(seconds=4.5, decay=3.2){
+    const rate = ctx.sampleRate;
+    const len = Math.max(1, (seconds*rate)|0);
+    const buf = ctx.createBuffer(2, len, rate);
+    for(let ch=0; ch<2; ch++){
+      const d = buf.getChannelData(ch);
+      for(let i=0;i<len;i++){
+        const t = i/len, env = Math.pow(1 - t, decay);
+        d[i] = (Math.random()*2-1) * env;
+      }
+    }
+    return buf;
+  }
+
+  function setup(){
+    ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});
+    master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
+
+    lowpass = ctx.createBiquadFilter(); lowpass.type = "lowpass"; lowpass.frequency.value = state.brightness;
+
+    // Formant bus (3 peaking filters)
+    const f1 = ctx.createBiquadFilter(); f1.type = "peaking"; f1.Q.value = 3;
+    const f2 = ctx.createBiquadFilter(); f2.type = "peaking"; f2.Q.value = 3;
+    const f3 = ctx.createBiquadFilter(); f3.type = "peaking"; f3.Q.value = 3;
+    formantBus = {f1,f2,f3, t:0};
+
+    // Convolver reverb
+    convolver = ctx.createConvolver();
+    convolver.buffer = makeReverbImpulse();
+    const revGain = ctx.createGain(); revGain.gain.value = state.reverb;
+
+    reverbSend = ctx.createGain(); reverbSend.gain.value = state.reverb;
+
+    sandGain = ctx.createGain(); sandGain.gain.value = state.sand;
+
+    // Noise
+    const noise = ctx.createBufferSource();
+    const nbuf = ctx.createBuffer(1, ctx.sampleRate*2, ctx.sampleRate);
+    const ndata = nbuf.getChannelData(0);
+    for(let i=0;i<ndata.length;i++) ndata[i] = (Math.random()*2-1);
+    noise.buffer = nbuf; noise.loop = true;
+    const nBP = ctx.createBiquadFilter(); nBP.type = "bandpass"; nBP.frequency.value = 1500; nBP.Q.value = 0.7;
+
+    // Main musical sum
+    const musicSum = ctx.createGain(); musicSum.gain.value = state.intensity;
+
+    // Routing: music -> formants -> lowpass -> master
+    musicSum.connect(formantBus.f1); formantBus.f1.connect(formantBus.f2); formantBus.f2.connect(formantBus.f3);
+    formantBus.f3.connect(lowpass); lowpass.connect(master);
+
+    // Reverb send
+    musicSum.connect(reverbSend); reverbSend.connect(convolver); convolver.connect(revGain); revGain.connect(master);
+
+    // Noise route
+    noise.connect(nBP); nBP.connect(sandGain); sandGain.connect(master);
+    noise.start();
+
+    // Keep reference to where degree buses will connect
+    setup.musicSum = musicSum;
+  }
+
+  function degreeFreq(index){
+    const deg = scaleDegrees[index] ?? 0;
+    const rootIdx = noteIndex[state.root] + 12*(parseInt(state.oct)||3);
+    const baseMidi = 24 + rootIdx; // keep lower base like original
+    return midiToFreq(baseMidi + deg);
+  }
+
+  function makeDegreeBus(index){
+    const bus = {
+      idx:index,
+      pan: ctx.createStereoPanner(),
+      gain: ctx.createGain(),
+      nodes:[]
+    };
+    bus.gain.gain.value = 0.0; // we’ll crossfade into these
+    bus.gain.connect(bus.pan); bus.pan.connect(setup.musicSum);
+    bus.pan.pan.value = (Math.random()*2-1)*state.panAmt;
+
+    // Build cluster for this fixed degree
+    const freq = degreeFreq(index);
+    const cluster = Math.max(1, state.cluster|0);
+    for(let i=0;i<cluster;i++){
+      const p = PARTIALS[i % PARTIALS.length];
+      const o = ctx.createOscillator();
+      const g = ctx.createGain(); g.gain.value = (p.w || 0.5) * 0.22;
+
+      // Detune & subtle drift
+      const dLFO = ctx.createOscillator(); dLFO.type="sine"; dLFO.frequency.value = 0.08 + Math.random()*0.2;
+      const dGain = ctx.createGain(); dGain.gain.value = state.detune * 2; // cents p-p
+      dLFO.connect(dGain).connect(o.detune);
+
+      const startDet = (Math.random()*2-1) * state.detune;
+      o.type = (i%2===0?"sawtooth":"triangle");
+      o.frequency.setValueAtTime(freq * p.ratio, ctx.currentTime);
+      o.detune.setValueAtTime(startDet, ctx.currentTime);
+
+      // Tiny vibrato
+      const vib = ctx.createOscillator(); vib.type="sine"; vib.frequency.value = 0.10 + Math.random()*0.25;
+      const vGain = ctx.createGain(); vGain.gain.value = 5 + Math.random()*6;
+      vib.connect(vGain).connect(o.detune);
+
+      o.connect(g).connect(bus.gain);
+      o.start(); dLFO.start(); vib.start();
+
+      bus.nodes.push(o,g,dLFO,dGain,vib,vGain);
+    }
+    return bus;
+  }
+
+  function rebuildDegreeBuses(){
+    // cleanup
+    degreeBuses.forEach(b=>{
+      try{ b.nodes.forEach(n=>{ n.stop && n.stop(); }); }catch{}
+    });
+    degreeBuses.length = 0;
+
+    // ensure note slider max aligns with scale length
+    const maxPos = Math.max(0, (scaleDegrees.length-1));
+    notePos.max = String(maxPos + 0.999); // allow a hair beyond last to keep smoothness
+    updateNoteLabel();
+
+    for(let i=0;i<scaleDegrees.length;i++){
+      degreeBuses.push(makeDegreeBus(i));
+    }
+  }
+
+  // ---------- UI wiring ----------
+  const $ = s=>document.querySelector(s);
+  const startBtn=$('#startBtn'), stopBtn=$('#stopBtn');
+  const scaleSel=$('#scaleSel'), rootSel=$('#rootSel'), octSel=$('#octSel');
+  const notePos=$('#notePos'), noteLabel=$('#noteLabel');
+
+  const intensity=$('#intensity'), bright=$('#bright'), reverb=$('#reverb'), sand=$('#sand');
+  const cluster=$('#cluster'), detune=$('#detune'), panAmt=$('#panAmt');
+  const formantAmt=$('#formantAmt'), formantSpd=$('#formantSpd');
+
+  function fillScales(){
+    for(const n of Object.keys(SCALES)){
+      const o=document.createElement('option'); o.textContent=n;
+      scaleSel.appendChild(o);
+    }
+    scaleSel.value = state.scale;
+  }
+  function fillRoots(){
+    NOTES.forEach(n=>{
+      const o=document.createElement('option'); o.textContent=n;
+      rootSel.appendChild(o);
+    });
+    rootSel.value = state.root;
+  }
+
+  function recalcScaleAndBuses(){
+    scaleDegrees = SCALES[state.scale].slice();
+    baseMidiRoot = noteIndex[state.root] + 12*(parseInt(state.oct)||3);
+    rebuildDegreeBuses();
+    // immediately apply current slider position to new buses so we don't pop
+    applyNoteCrossfade(state.notePos, /*immediate*/ true);
+  }
+
+  // ---------- Note crossfade logic ----------
+  // Adaptive smoothing: adjust timeConstant based on slider velocity.
+  let lastVal = 0, lastT = 0;
+  function adaptiveTau(newVal){
+    const now = ctx.currentTime;
+    if(lastT === 0){ lastT = now; lastVal = newVal; return 0.08; } // initial
+    const dt = Math.max(1e-4, now - lastT);
+    const vel = Math.abs(newVal - lastVal) / dt; // units: (slider units)/sec
+    lastVal = newVal; lastT = now;
+    // map velocity to tau (slower movement => larger tau = smoother / slower)
+    // e.g., vel ~0 -> 0.25s, vel big -> ~0.03s
+    const tau = clamp(0.25 - 0.22 * Math.tanh(vel/2.0), 0.03, 0.25);
+    return tau;
+  }
+
+  function applyNoteCrossfade(pos, immediate=false){
+    if(!ctx) return;
+    state.notePos = pos;
+
+    const n = scaleDegrees.length;
+    if(n === 0) return;
+
+    // clamp pos to [0, n-1]
+    const p = clamp(pos, 0, Math.max(0, n-1));
+    const i0 = Math.floor(p);
+    const i1 = Math.min(n-1, i0+1);
+    const t  = p - i0;
+
+    const now = ctx.currentTime;
+    const tau = immediate ? 0.02 : adaptiveTau(p); // tiny but safe if rebuilding
+
+    // set target gains: i0 -> (1-t), i1 -> t, others -> 0
+    for(let i=0;i<n;i++){
+      const target = (i===i0) ? (1-t) : (i===i1 ? t : 0.0);
+      degreeBuses[i].gain.gain.setTargetAtTime(target * state.intensity, now, tau);
+    }
+  }
+
+  function updateNoteLabel(){
+    const n = scaleDegrees.length;
+    const maxIdx = Math.max(0, n-1);
+    const value = parseFloat(notePos.value);
+    const p = clamp(value, 0, maxIdx);
+    const i0 = Math.floor(p);
+    const i1 = Math.min(maxIdx, i0+1);
+    const t = (n>0)? (p - i0) : 0;
+    noteLabel.textContent = ` (between degree ${i0} and ${i1}, mix=${(1-t).toFixed(2)}/${t.toFixed(2)})`;
+  }
+
+  // ---------- Engine tick for formants / globals ----------
+  let rafId=null;
+  function tick(){
+    if(!state.running) return;
+    const now = ctx.currentTime;
+
+    // formant morph
+    if(formantBus){
+      formantBus.t += state.formantSpd * 0.0025;
+      const t = formantBus.t;
+      const f1 = 300  + Math.sin(t*0.8)*80;
+      const f2 = 1200 + Math.sin(t*0.5 + 1.3)*220;
+      const f3 = 2400 + Math.sin(t*0.3 + 2.1)*350;
+      [formantBus.f1.frequency, formantBus.f2.frequency, formantBus.f3.frequency].forEach((p,i)=>{
+        const target=[f1,f2,f3][i]; p.setTargetAtTime(target, now, 0.25);
+        const gain=[8,6,4][i] * state.formantAmt;
+        formantBus[["f1","f2","f3"][i]].gain.setTargetAtTime(gain, now, 0.25);
+      });
+    }
+
+    // global tonality
+    if(sandGain)  sandGain.gain.setTargetAtTime(state.sand, now, 0.2);
+    if(lowpass)   lowpass.frequency.setTargetAtTime(state.brightness, now, 0.25);
+    if(reverbSend)reverbSend.gain.setTargetAtTime(state.reverb, now, 0.3);
+
+    rafId = requestAnimationFrame(tick);
+  }
+
+  // ---------- Start/Stop ----------
+  function start(){
+    if(!ctx) setup();
+    ctx.resume();
+    state.running = true;
+    recalcScaleAndBuses();
+    // initialize crossfade at current slider spot
+    applyNoteCrossfade(parseFloat(notePos.value), true);
+    tick();
+  }
+  function stop(){
+    state.running = false;
+    cancelAnimationFrame(rafId); rafId=null;
+    if(degreeBuses.length){
+      const now = ctx.currentTime;
+      degreeBuses.forEach(b=> b.gain.gain.setTargetAtTime(0, now, 0.05));
+    }
+  }
+
+  // ---------- Wire UI ----------
+  fillScales(); fillRoots();
+
+  startBtn.onclick = start;
+  stopBtn.onclick  = stop;
+
+  scaleSel.oninput = e=>{ state.scale = e.target.value; if(ctx) recalcScaleAndBuses(); };
+  rootSel.oninput  = e=>{ state.root  = e.target.value; if(ctx) recalcScaleAndBuses(); };
+  octSel.oninput   = e=>{ state.oct   = +e.target.value; if(ctx) recalcScaleAndBuses(); };
+
+  notePos.oninput = e=>{
+    const v = parseFloat(e.target.value);
+    updateNoteLabel();
+    applyNoteCrossfade(v, /*immediate*/ false);
+  };
+
+  intensity.oninput = e=>{
+    state.intensity = +e.target.value;
+    if(!ctx) return;
+    // Retarget current degree bus levels with new intensity
+    applyNoteCrossfade(state.notePos, true);
+  };
+  bright.oninput   = e=>{ state.brightness = +e.target.value; };
+  reverb.oninput   = e=>{ state.reverb = +e.target.value; };
+  sand.oninput     = e=>{ state.sand = +e.target.value; };
+
+  cluster.oninput  = e=>{
+    state.cluster = +e.target.value;
+    if(ctx) recalcScaleAndBuses();
+  };
+  detune.oninput   = e=>{
+    state.detune = +e.target.value;
+    if(ctx) recalcScaleAndBuses();
+  };
+  panAmt.oninput   = e=>{
+    state.panAmt = +e.target.value;
+    if(ctx) recalcScaleAndBuses();
+  };
+  formantAmt.oninput = e=>{ state.formantAmt = +e.target.value; };
+  formantSpd.oninput = e=>{ state.formantSpd = +e.target.value; };
+
+  // Mobile: ensure gesture resumes audio
+  document.addEventListener('touchend', ()=>{ if(ctx && ctx.state!=="running") ctx.resume(); }, {passive:true});
+})();
+</script>
+</body>
+</html>
