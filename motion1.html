@@ -83,6 +83,7 @@
 		.meter-label-row {
 			display: flex;
 			justify-content: space-between;
+			align-items: center;
 			font-size: 0.8rem;
 			color: #a8b4d4;
 		}
@@ -185,6 +186,43 @@
 			background: rgba(15, 23, 42, 0.95);
 			color: #e5e7eb;
 		}
+
+		/* Streak meter styles */
+		.streak-row {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 8px;
+			font-size: 0.8rem;
+		}
+
+		.streak-label {
+			color: #a8b4d4;
+			white-space: nowrap;
+		}
+
+		.streak-bar-wrap {
+			flex: 1;
+			height: 10px;
+			border-radius: 999px;
+			background: rgba(15, 23, 42, 0.9);
+			border: 1px solid rgba(148, 163, 235, 0.4);
+			overflow: hidden;
+		}
+
+		.streak-bar-inner {
+			height: 100%;
+			width: 0%;
+			transition: width 0.08s linear;
+		}
+
+		.streak-bar-inner.accel {
+			background: linear-gradient(90deg, rgba(74, 222, 128, 0.2), rgba(74, 222, 128, 0.9));
+		}
+
+		.streak-bar-inner.brake {
+			background: linear-gradient(90deg, rgba(248, 113, 113, 0.2), rgba(248, 113, 113, 0.9));
+		}
 	</style>
 </head>
 <body>
@@ -192,9 +230,10 @@
 		<div class="card">
 			<h1>Accel / Decel Meter</h1>
 			<p>
-				Press <strong>Start</strong>, put the phone in your pocket, and move.
-				The app uses GPS speed + accelerometer to learn your forward direction
-				and shows live acceleration (up) and braking (down).
+				Press <strong>Start</strong>, put the phone in your pocket, and ride.
+				The app learns your forward direction from GPS, then uses only the
+				accelerometer to show instantaneous acceleration (big meter) and
+				<strong>continuous accel/decel streaks</strong> (small bars).
 			</p>
 		</div>
 
@@ -205,7 +244,7 @@
 					<span id="status-text">Idle</span>
 				</div>
 				<span style="font-size:0.75rem;color:#64748b;">
-					GPS + accel → forward accel estimate
+					GPS → forward axis, accel → events
 				</span>
 			</div>
 
@@ -216,7 +255,7 @@
 
 			<div class="readouts">
 				<div class="readouts-row">
-					<span class="readouts-label">Forward accel (est.)</span>
+					<span class="readouts-label">Forward accel (instant)</span>
 					<span class="readouts-value" id="accel-readout">0.00 m/s²</span>
 				</div>
 				<div class="readouts-row">
@@ -231,6 +270,23 @@
 					<span class="readouts-label">Mode</span>
 					<span class="readouts-value" id="mode-readout">Learning</span>
 				</div>
+
+				<hr style="border:none;border-top:1px solid rgba(30,64,175,0.5);margin:6px 0;">
+
+				<div class="streak-row">
+					<span class="streak-label">Accel streak</span>
+					<div class="streak-bar-wrap">
+						<div class="streak-bar-inner accel" id="accel-streak-bar"></div>
+					</div>
+					<span class="readouts-value" id="accel-streak-readout">0%</span>
+				</div>
+				<div class="streak-row">
+					<span class="streak-label">Brake streak</span>
+					<div class="streak-bar-wrap">
+						<div class="streak-bar-inner brake" id="brake-streak-bar"></div>
+					</div>
+					<span class="readouts-value" id="brake-streak-readout">0%</span>
+				</div>
 			</div>
 		</div>
 
@@ -238,9 +294,9 @@
 
 		<div class="card">
 			<p style="font-size:0.8rem;">
-				Note: needs <code>https://</code> and motion/location permissions.
-				This is a prototype, so expect some rough edges while it "locks in"
-				the forward direction.
+				Note: needs <code>https://</code>, motion, and location permissions.
+				Once "Locked (est.)", watch the streak bars: small jerks should stay low;
+				sustained accel or braking should fill the bar.
 			</p>
 		</div>
 	</div>
@@ -250,8 +306,8 @@
 		let accelFiltered = { x: 0, y: 0, z: 0 };
 		let accelReady = false;
 
-		// The learned mapping vector: dot(accel, w) ≈ forward acceleration
-		let w = { x: 0, y: 0, z: 1 }; // init with "z roughly forward" as a guess
+		// Learned mapping: dot(accel, w) ≈ forward accel
+		let w = { x: 0, y: 0, z: 1 }; // initial guess
 
 		let lastSpeed = null;
 		let lastSpeedTime = null;
@@ -260,14 +316,26 @@
 		let accelDisplayValue = 0;
 		let running = false;
 
-		// Config
-		const accelAlpha = 0.15;      // low-pass filter for accel
+		// Streak accumulators (0..1)
+		let accelStreak = 0;
+		let brakeStreak = 0;
+
+		// Timing for streak integration
+		let lastDisplayTime = null;
+
+		// Config (same as first version for learning)
+		const accelAlpha = 0.15;      // low-pass for raw accel
 		const displayAlpha = 0.1;     // low-pass for display
-		const learningRate = 0.04;    // SGD step for mapping
-		const minDt = 0.4;            // min GPS dt for using a speed delta (s)
-		const maxDt = 10;             // max GPS dt (drop if too slow)
+		const learningRate = 0.04;    // SGD step
+		const minDt = 0.4;            // min GPS dt (s)
+		const maxDt = 10;             // max GPS dt (s)
 		const minSpeedForLearning = 1.4; // ~5 km/h
 		const maxAccelForDisplay = 5.0;  // clamp display m/s²
+
+		// Streak logic config
+		const accelThreshold = 0.4;      // m/s²; ignore smaller noise
+		const streakGrowPerSecond = 0.9; // how quickly a strong accel fills bar
+		const streakDecayPerSecond = 2.0; // how quickly streak decays when not accel
 
 		// UI elements
 		const meterBarEl = document.getElementById("meter-bar");
@@ -276,9 +344,13 @@
 		const updatesReadoutEl = document.getElementById("updates-readout");
 		const modeReadoutEl = document.getElementById("mode-readout");
 		const startBtnEl = document.getElementById("start-btn");
-		const statusBadgeEl = document.getElementById("status-badge");
 		const statusDotEl = document.getElementById("status-dot");
 		const statusTextEl = document.getElementById("status-text");
+
+		const accelStreakBarEl = document.getElementById("accel-streak-bar");
+		const brakeStreakBarEl = document.getElementById("brake-streak-bar");
+		const accelStreakReadoutEl = document.getElementById("accel-streak-readout");
+		const brakeStreakReadoutEl = document.getElementById("brake-streak-readout");
 
 		function setStatus(text, good) {
 			statusTextEl.textContent = text;
@@ -306,7 +378,6 @@
 		function handleMotion(event) {
 			if (!running) return;
 
-			// Prefer acceleration excluding gravity if available, else include gravity
 			let a = event.acceleration;
 			if (!a || (a.x === null && a.y === null && a.z === null)) {
 				a = event.accelerationIncludingGravity || { x: 0, y: 0, z: 0 };
@@ -329,14 +400,13 @@
 			accelFiltered.z = lowPass(accelFiltered.z, az, accelAlpha);
 		}
 
-		// ----- Geolocation (speed) + learning -----
+		// ----- Geolocation (speed) + learning forward axis -----
 		function handlePosition(pos) {
 			if (!running) return;
 
 			const tMs = pos.timestamp;
 			const t = tMs / 1000;
 
-			// speed is in m/s; may be null
 			let speed = pos.coords.speed;
 			if (speed == null || Number.isNaN(speed)) {
 				speed = 0;
@@ -348,13 +418,11 @@
 				const dt = t - lastSpeedTime;
 				if (dt >= minDt && dt <= maxDt) {
 					const dSpeed = speed - lastSpeed;
-					const obsAccel = dSpeed / dt; // observed forward accel from GPS
+					const obsAccel = dSpeed / dt; // forward accel from GPS
 
-					// Only learn when we're moving and accel looks reasonable
 					if (Math.abs(obsAccel) > 0.05 && speed > minSpeedForLearning) {
 						const a = accelFiltered;
 
-						// Predict accel using current mapping
 						const pred = dot(a, w);
 						const error = pred - obsAccel;
 
@@ -363,7 +431,6 @@
 						w.y -= learningRate * error * a.y;
 						w.z -= learningRate * error * a.z;
 
-						// Renormalize occasionally to keep it sane
 						if ((mappingUpdates % 10) === 0) {
 							w = normalize(w);
 						}
@@ -377,7 +444,6 @@
 			lastSpeed = speed;
 			lastSpeedTime = t;
 
-			// Update mode label once we've learned a bit
 			if (mappingUpdates > 40) {
 				modeReadoutEl.textContent = "Locked (est.)";
 				setStatus("Running", true);
@@ -392,34 +458,72 @@
 			setStatus("GPS error", false);
 		}
 
-		// ----- Display loop -----
-		function updateDisplay() {
+		// ----- Display + streak logic -----
+		function updateDisplay(timestamp) {
+			if (!lastDisplayTime) {
+				lastDisplayTime = timestamp;
+			}
+			const dt = Math.max(0, (timestamp - lastDisplayTime) / 1000);
+			lastDisplayTime = timestamp;
+
 			if (running && accelReady) {
-				// Estimated forward accel = dot(accel, w)
+				// Estimated forward accel (in m/s²)
 				const est = dot(accelFiltered, w);
 
-				// Smooth for display
+				// Smooth for the big meter
 				accelDisplayValue = lowPass(accelDisplayValue, est, displayAlpha);
 
-				// Clamp
 				const clamped = Math.max(-maxAccelForDisplay, Math.min(maxAccelForDisplay, accelDisplayValue));
 				const ratio = clamped / maxAccelForDisplay; // -1..1
 
-				// Update meter bar
+				// Big meter visualization
 				const magnitude = Math.abs(ratio);
 				const percent = magnitude * 100;
 
 				meterBarEl.style.height = percent.toFixed(1) + "%";
 				meterBarEl.style.transform = "translateY(" + (ratio >= 0 ? "-0%" : "0%") + ")";
-				// accel = positive (up), brake = negative (down)
+
 				if (ratio >= 0) {
 					meterBarEl.classList.add("accel");
 				} else {
 					meterBarEl.classList.remove("accel");
 				}
 
-				// Readout text
 				accelReadoutEl.textContent = clamped.toFixed(2) + " m/s²";
+
+				// ----- Streak logic -----
+				// Use the *instant* forward accel, not the extra-smoothed one,
+				// so we respond reasonably quickly but still ignore jitter via threshold.
+				const forward = est; // raw-ish projected accel
+
+				// Grow/decay accel streak
+				if (forward > accelThreshold) {
+					const excess = forward - accelThreshold;
+					accelStreak += dt * streakGrowPerSecond * excess;
+				} else {
+					accelStreak -= dt * streakDecayPerSecond;
+				}
+
+				// Grow/decay brake streak
+				if (forward < -accelThreshold) {
+					const excess = -forward - accelThreshold;
+					brakeStreak += dt * streakGrowPerSecond * excess;
+				} else {
+					brakeStreak -= dt * streakDecayPerSecond;
+				}
+
+				// Clamp to [0, 1]
+				accelStreak = Math.max(0, Math.min(1, accelStreak));
+				brakeStreak = Math.max(0, Math.min(1, brakeStreak));
+
+				const accelPct = Math.round(accelStreak * 100);
+				const brakePct = Math.round(brakeStreak * 100);
+
+				accelStreakBarEl.style.width = accelPct + "%";
+				brakeStreakBarEl.style.width = brakePct + "%";
+
+				accelStreakReadoutEl.textContent = accelPct + "%";
+				brakeStreakReadoutEl.textContent = brakePct + "%";
 			}
 
 			requestAnimationFrame(updateDisplay);
@@ -469,8 +573,6 @@
 		}
 
 		startBtnEl.addEventListener("click", startSensors);
-
-		// Kick off the render loop
 		requestAnimationFrame(updateDisplay);
 	</script>
 </body>
