@@ -1,0 +1,1097 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Synth Rider</title>
+	<style>
+		:root {
+			color-scheme: dark;
+			font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+			background: #05070a;
+			color: #f5f7ff;
+		}
+		body {
+			margin: 0;
+			background: radial-gradient(circle at top, #141b26 0, #05070a 55%);
+		}
+		#app {
+			max-width: 640px;
+			margin: 0 auto;
+			padding: 1.25rem 1rem 3rem;
+			display: flex;
+			flex-direction: column;
+			gap: 0.75rem;
+		}
+		h1 {
+			font-size: 1.4rem;
+			margin: 0 0 0.25rem;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+			color: #a6c0ff;
+		}
+		.sub {
+			font-size: 0.8rem;
+			color: #7e8aa8;
+		}
+		.section {
+			border-radius: 0.9rem;
+			padding: 0.8rem 0.9rem;
+			background: rgba(8, 12, 20, 0.96);
+			box-shadow:
+				0 0 0 1px rgba(120, 160, 255, 0.08),
+				0 18px 40px rgba(0, 0, 0, 0.7);
+			display: flex;
+			flex-direction: column;
+			gap: 0.45rem;
+		}
+		.section-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			font-size: 0.9rem;
+			color: #c6d2ff;
+			text-transform: uppercase;
+			letter-spacing: 0.12em;
+		}
+		.section-header small {
+			font-size: 0.7rem;
+			color: #7e8aa8;
+			text-transform: none;
+			letter-spacing: normal;
+		}
+		button.primary {
+			width: 100%;
+			border-radius: 999px;
+			padding: 0.55rem 0.9rem;
+			border: none;
+			background: linear-gradient(135deg, #2fd4ff, #7d5bff);
+			color: #02040a;
+			font-weight: 600;
+			font-size: 0.95rem;
+			cursor: pointer;
+			box-shadow: 0 10px 26px rgba(0, 0, 0, 0.6);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			gap: 0.4rem;
+		}
+		button.primary[data-state="stopped"] {
+			background: linear-gradient(135deg, #23c65d, #3de6aa);
+		}
+		button.primary[data-state="running"] {
+			background: linear-gradient(135deg, #ff3b5c, #ff8844);
+		}
+		button.primary:disabled {
+			opacity: 0.5;
+			cursor: default;
+		}
+		.badge-row {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.4rem;
+			font-size: 0.75rem;
+		}
+		.badge {
+			border-radius: 999px;
+			padding: 0.1rem 0.55rem;
+			background: rgba(23, 30, 54, 0.95);
+			color: #a6b4ff;
+			display: inline-flex;
+			align-items: center;
+			gap: 0.3rem;
+		}
+		.badge strong {
+			font-weight: 600;
+			color: #dde5ff;
+		}
+		.badge-pill {
+			border-radius: 999px;
+			padding: 0.12rem 0.5rem;
+			font-size: 0.75rem;
+			cursor: pointer;
+			border: 1px solid rgba(146, 168, 255, 0.35);
+			background: rgba(12, 18, 40, 0.9);
+			color: #cdd6ff;
+		}
+		.badge-pill[data-selected="true"] {
+			background: linear-gradient(135deg, #4b8dff, #9e57ff);
+			color: #050509;
+			border-color: transparent;
+		}
+		.control-row {
+			display: flex;
+			flex-direction: column;
+			gap: 0.35rem;
+		}
+		label.caption {
+			font-size: 0.8rem;
+			color: #9aa7d6;
+			display: flex;
+			justify-content: space-between;
+		}
+		label.caption span.value {
+			color: #e9eeff;
+			font-variant-numeric: tabular-nums;
+		}
+		input[type="range"] {
+			width: 100%;
+			-webkit-appearance: none;
+			appearance: none;
+			height: 0.4rem;
+			border-radius: 999px;
+			background: rgba(22, 30, 55, 0.9);
+			outline: none;
+		}
+		input[type="range"]::-webkit-slider-thumb {
+			-webkit-appearance: none;
+			appearance: none;
+			width: 18px;
+			height: 18px;
+			border-radius: 50%;
+			background: radial-gradient(circle at 30% 30%, #ffffff, #c0d2ff 35%, #3e6dff);
+			box-shadow: 0 0 0 2px rgba(1, 5, 20, 0.9), 0 0 18px rgba(107, 162, 255, 0.85);
+			cursor: pointer;
+			margin-top: -7px;
+		}
+		input[type="range"]::-moz-range-thumb {
+			width: 18px;
+			height: 18px;
+			border-radius: 50%;
+			border: none;
+			background: radial-gradient(circle at 30% 30%, #ffffff, #c0d2ff 35%, #3e6dff);
+			box-shadow: 0 0 0 2px rgba(1, 5, 20, 0.9), 0 0 18px rgba(107, 162, 255, 0.85);
+			cursor: pointer;
+		}
+		input[type="range"]::-moz-range-track {
+			height: 0.4rem;
+			border-radius: 999px;
+			background: rgba(22, 30, 55, 0.9);
+		}
+		hr.divider {
+			border: none;
+			border-top: 1px dashed rgba(88, 104, 150, 0.6);
+			margin: 0.3rem -0.4rem;
+		}
+		input[type="text"] {
+			width: 100%;
+			border-radius: 999px;
+			border: 1px solid rgba(120, 150, 230, 0.6);
+			background: rgba(9, 12, 24, 0.95);
+			color: #e9eeff;
+			padding: 0.45rem 0.8rem;
+			font-size: 0.9rem;
+			outline: none;
+		}
+		input[type="text"]:focus {
+			border-color: #51a5ff;
+			box-shadow: 0 0 0 1px rgba(81, 165, 255, 0.6);
+		}
+		.meter-shell {
+			width: 100%;
+			height: 0.45rem;
+			border-radius: 999px;
+			background: rgba(18, 24, 44, 0.9);
+			overflow: hidden;
+			display: flex;
+		}
+		.meter-bar {
+			height: 100%;
+			flex-grow: 1;
+			transform-origin: left center;
+			transition: transform 0.05s linear;
+		}
+		.meter-bar.pos {
+			background: linear-gradient(90deg, #22d38c, #5bffda);
+		}
+		.meter-bar.neg {
+			background: linear-gradient(90deg, #ff4b7a, #ffb55a);
+		}
+		.mono {
+			font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+			font-size: 0.75rem;
+			color: #9aa6d0;
+		}
+		.mono strong {
+			color: #e9eeff;
+		}
+		@media (min-width: 768px) {
+			#app {
+				padding-top: 1.75rem;
+			}
+		}
+	</style>
+</head>
+<body>
+<div id="app">
+	<header>
+		<h1>Rider Synth</h1>
+		<div class="sub">Drone synth driven by your acceleration. Connect, start, and ride.</div>
+	</header>
+
+	<!-- STATUS / START-STOP -->
+	<section class="section" id="section-main">
+		<div class="section-header">
+			<span>Session</span>
+			<small id="status-connection">WS: …</small>
+		</div>
+		<button class="primary" id="btn-toggle" data-state="stopped" disabled>
+			<span id="btn-toggle-label">Initializing…</span>
+		</button>
+		<div class="badge-row">
+			<div class="badge">
+				<span>Role</span>
+				<strong id="badge-role">unknown</strong>
+			</div>
+			<div class="badge">
+				<span>Note</span>
+				<strong id="badge-note">–</strong>
+			</div>
+			<div class="badge">
+				<span>Accel</span>
+				<strong id="badge-accel">0.00</strong>
+			</div>
+			<div class="badge">
+				<span>GPS</span>
+				<strong id="badge-gps">idle</strong>
+			</div>
+		</div>
+	</section>
+
+	<!-- OCTAVE RANGE -->
+	<section class="section">
+		<div class="section-header">
+			<span>Register</span>
+			<small>Choose your octave band</small>
+		</div>
+		<div class="badge-row">
+			<button class="badge-pill" data-octave="bass">Bass</button>
+			<button class="badge-pill" data-octave="mid" data-selected="true">Mids</button>
+			<button class="badge-pill" data-octave="treble">Treble</button>
+		</div>
+		<div class="mono">
+			<span>Current scale:</span>
+			<strong id="text-scale">C Dorian (C, D, Eb, F, G, A, Bb)</strong>
+		</div>
+	</section>
+
+	<!-- TIMBRE CONTROLS -->
+	<section class="section">
+		<div class="section-header">
+			<span>Timbre</span>
+			<small>Shape the drone</small>
+		</div>
+
+		<div class="control-row">
+			<label class="caption">
+				<span>Brightness</span>
+				<span class="value" id="val-brightness">50%</span>
+			</label>
+			<input type="range" id="slider-brightness" min="0" max="100" step="1" value="50">
+		</div>
+
+		<div class="control-row">
+			<label class="caption">
+				<span>Overdrive</span>
+				<span class="value" id="val-overdrive">30%</span>
+			</label>
+			<input type="range" id="slider-overdrive" min="0" max="100" step="1" value="30">
+		</div>
+
+		<div class="control-row">
+			<label class="caption">
+				<span>Reverb</span>
+				<span class="value" id="val-reverb">40%</span>
+			</label>
+			<input type="range" id="slider-reverb" min="0" max="100" step="1" value="40">
+		</div>
+
+		<div class="control-row">
+			<label class="caption">
+				<span>Formant</span>
+				<span class="value" id="val-formant">50%</span>
+			</label>
+			<input type="range" id="slider-formant" min="0" max="100" step="1" value="50">
+		</div>
+	</section>
+
+	<!-- MOTION / STREAK METER -->
+	<section class="section">
+		<div class="section-header">
+			<span>Motion</span>
+			<small id="status-motion">Sensors: idle</small>
+		</div>
+		<label class="caption">
+			<span>Accel / Brake streak</span>
+			<span class="value" id="val-streak">0.00</span>
+		</label>
+		<div class="meter-shell">
+			<div class="meter-bar neg" id="meter-neg" style="transform:scaleX(0);"></div>
+			<div class="meter-bar pos" id="meter-pos" style="transform:scaleX(0);"></div>
+		</div>
+		<div class="mono" id="status-calib">
+			Forward axis: <strong>learning…</strong>
+		</div>
+	</section>
+
+	<!-- NAME / ROLE -->
+	<section class="section">
+		<div class="section-header">
+			<span>Identity</span>
+			<small>Use name “director” to claim director role</small>
+		</div>
+		<div class="control-row">
+			<label class="caption">
+				<span>Name</span>
+			</label>
+			<input type="text" id="input-name" autocomplete="off" spellcheck="false">
+		</div>
+		<div class="mono" id="status-log">Waiting for connection…</div>
+	</section>
+</div>
+
+<script>
+	// ========================== CONFIG / CONSTANTS ==========================
+	const WSS_URL = "wss://web-modules.porchlogic.com/synth";
+
+	// Simple starting scale: C Dorian, 7 degrees
+	const SCALE = {
+		name: "C Dorian",
+		rootMidi: 48, // C2 base; will shift by octave band
+		intervals: [0, 2, 3, 5, 7, 9, 10], // semitones from root
+	};
+
+	const OCTAVE_BANDS = {
+		bass: -1,   // below root
+		mid: 0,     // around root
+		treble: 1,  // above root
+	};
+
+	// Motion tuning
+	const MOTION_CONFIG = {
+		gravityAlpha: 0.96,        // low-pass for gravity
+		minMagForCalib: 0.6,       // m/s^2
+		maxMagForCalib: 5.0,       // ignore crazy spikes
+		calibSamplesNeeded: 60,    // number of motion samples to learn forward
+		speedForMoving: 1.0,       // m/s considered "moving"
+		thresholdAccel: 0.35,      // streak threshold
+		streakRisePerSec: 1.6,
+		streakDecayPerSec: 3.0,
+	};
+
+	// Note send throttling
+	const NOTE_SEND_MIN_INTERVAL_MS = 180;
+
+	// ============================ UI ELEMENTS ==============================
+	const elStatusConn = document.getElementById("status-connection");
+	const elBtnToggle = document.getElementById("btn-toggle");
+	const elBtnLabel = document.getElementById("btn-toggle-label");
+	const elBadgeRole = document.getElementById("badge-role");
+	const elBadgeNote = document.getElementById("badge-note");
+	const elBadgeAccel = document.getElementById("badge-accel");
+	const elBadgeGps = document.getElementById("badge-gps");
+
+	const octaveButtons = Array.from(
+		document.querySelectorAll(".badge-pill[data-octave]")
+	);
+
+	const elSliderBrightness = document.getElementById("slider-brightness");
+	const elValBrightness = document.getElementById("val-brightness");
+	const elSliderOverdrive = document.getElementById("slider-overdrive");
+	const elValOverdrive = document.getElementById("val-overdrive");
+	const elSliderReverb = document.getElementById("slider-reverb");
+	const elValReverb = document.getElementById("val-reverb");
+	const elSliderFormant = document.getElementById("slider-formant");
+	const elValFormant = document.getElementById("val-formant");
+
+	const elStatusMotion = document.getElementById("status-motion");
+	const elValStreak = document.getElementById("val-streak");
+	const elMeterNeg = document.getElementById("meter-neg");
+	const elMeterPos = document.getElementById("meter-pos");
+	const elStatusCalib = document.getElementById("status-calib");
+
+	const elInputName = document.getElementById("input-name");
+	const elStatusLog = document.getElementById("status-log");
+	const elTextScale = document.getElementById("text-scale");
+
+	elTextScale.textContent = `${SCALE.name} (C, D, Eb, F, G, A, Bb)`;
+
+	// =========================== STATE: NETWORK ============================
+	let ws = null;
+	let clientId = null;
+	let myName = "";
+	let myRole = "unknown"; // "rider" | "director"
+	let lastNoteSent = { degreeIndex: null, velocity: null };
+	let lastNoteSentAt = 0;
+	let isRunning = false;
+
+	function ensureClientId() {
+		try {
+			const stored = localStorage.getItem("synth-rider-client-id");
+			if (stored) {
+				clientId = stored;
+				return;
+			}
+		} catch (_) {}
+
+		if (window.crypto && crypto.randomUUID) {
+			clientId = crypto.randomUUID();
+		} else {
+			clientId = "client-" + Date.now() + "-" + Math.floor(Math.random() * 1e6);
+		}
+		try {
+			localStorage.setItem("synth-rider-client-id", clientId);
+		} catch (_) {}
+	}
+
+	function logStatus(msg) {
+		elStatusLog.textContent = msg;
+	}
+
+	function setConnectionStatus(text, ok) {
+		elStatusConn.textContent = text;
+		elStatusConn.style.color = ok ? "#8de1ff" : "#ff728f";
+	}
+
+	function setRole(role) {
+		myRole = role || "rider";
+		elBadgeRole.textContent = myRole;
+	}
+
+	function connectWebSocket() {
+		if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+			return;
+		}
+		setConnectionStatus("WS: connecting…", false);
+		logStatus("Connecting to server…");
+
+		ws = new WebSocket(WSS_URL);
+
+		ws.addEventListener("open", () => {
+			setConnectionStatus("WS: connected", true);
+			logStatus("Connected. Sending hello…");
+			elBtnToggle.disabled = false;
+			elBtnLabel.textContent = "Start synth";
+			elBtnToggle.dataset.state = "stopped";
+			sendHello();
+		});
+
+		ws.addEventListener("close", () => {
+			setConnectionStatus("WS: closed", false);
+			logStatus("Disconnected. Retrying in a bit…");
+			elBtnToggle.disabled = true;
+			setRole("unknown");
+			setTimeout(connectWebSocket, 2000);
+		});
+
+		ws.addEventListener("error", (err) => {
+			setConnectionStatus("WS: error", false);
+			console.error("WS error", err);
+			logStatus("WebSocket error.");
+		});
+
+		ws.addEventListener("message", (event) => {
+			let msg;
+			try {
+				msg = JSON.parse(event.data);
+			} catch {
+				return;
+			}
+			handleServerMessage(msg);
+		});
+	}
+
+	function sendHello() {
+		if (!ws || ws.readyState !== WebSocket.OPEN) return;
+		if (!clientId) ensureClientId();
+		const name = (myName || "").trim();
+		const payload = {
+			type: "hello",
+			clientId,
+			name,
+		};
+		ws.send(JSON.stringify(payload));
+	}
+
+	function sendNoteUpdate(degreeIndex, velocity) {
+		if (!ws || ws.readyState !== WebSocket.OPEN || !clientId) return;
+		const now = performance.now();
+		if (now - lastNoteSentAt < NOTE_SEND_MIN_INTERVAL_MS &&
+			degreeIndex === lastNoteSent.degreeIndex &&
+			velocity === lastNoteSent.velocity) {
+			return;
+		}
+		lastNoteSentAt = now;
+		lastNoteSent = { degreeIndex, velocity };
+		const payload = {
+			type: "note",
+			clientId,
+			degree: degreeIndex,
+			octave: currentOctaveOffset,
+			velocity,
+		};
+		ws.send(JSON.stringify(payload));
+	}
+
+	function sendGps(lat, lon, accuracy, tMs) {
+		if (!ws || ws.readyState !== WebSocket.OPEN || !clientId) return;
+		const payload = {
+			type: "gps",
+			clientId,
+			lat,
+			lon,
+			accuracy: Number.isFinite(accuracy) ? accuracy : null,
+			t: Number.isFinite(tMs) ? tMs : null,
+		};
+		ws.send(JSON.stringify(payload));
+	}
+
+	function handleServerMessage(msg) {
+		if (msg.type === "welcome") {
+			setRole(msg.role === "director" ? "director" : "rider");
+			logStatus(`Welcome as ${myRole}.`);
+			return;
+		}
+		if (msg.type === "info" && msg.message) {
+			logStatus(msg.message);
+			return;
+		}
+		// Director-only messages (snapshot, peerUpdate, presence)
+		if (msg.type === "snapshot" && myRole === "director") {
+			console.log("[director] snapshot", msg.peers);
+			return;
+		}
+		if (msg.type === "peerUpdate" && myRole === "director") {
+			console.log("[director] update", msg);
+			return;
+		}
+		if (msg.type === "presence" && myRole === "director") {
+			console.log("[director] presence", msg);
+			return;
+		}
+		// Optional future: if server ever sends { type:"scale", rootMidi, intervals }
+		if (msg.type === "scale") {
+			// Placeholder: adapt later once server supports it.
+			console.log("Scale update from server", msg);
+		}
+	}
+
+	// ============================== AUDIO =================================
+	let audioCtx = null;
+	let masterGain = null;
+	let degreeGains = [];
+	let degreeOscs = []; // array of arrays of oscillators per degree
+	let preDriveGain = null;
+	let waveShaper = null;
+	let toneFilter = null;
+	let formantFilter = null;
+	let reverbDelay = null;
+	let reverbFeedbackGain = null;
+	let reverbMixGain = null;
+
+	let currentOctaveKey = "mid";
+	let currentOctaveOffset = OCTAVE_BANDS[currentOctaveKey];
+
+	function midiToFreq(m) {
+		return 440 * Math.pow(2, (m - 69) / 12);
+	}
+
+	function createReverbImpulse(ctx, seconds = 2.0, decay = 3.0) {
+		const rate = ctx.sampleRate;
+		const length = rate * seconds;
+		const impulse = ctx.createBuffer(2, length, rate);
+		for (let channel = 0; channel < 2; channel++) {
+			const data = impulse.getChannelData(channel);
+			for (let i = 0; i < length; i++) {
+				const t = i / length;
+				data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay);
+			}
+		}
+		return impulse;
+	}
+
+	function makeOverdriveCurve(amount) {
+		const nSamples = 2048;
+		const curve = new Float32Array(nSamples);
+		const k = amount * 50 + 1; // 1..51
+		const xRange = 2;
+		for (let i = 0; i < nSamples; i++) {
+			const x = (i / (nSamples - 1)) * 2 - 1;
+			curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
+		}
+		return curve;
+	}
+
+	function initAudio() {
+		if (audioCtx) return;
+		audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+		masterGain = audioCtx.createGain();
+		masterGain.gain.value = 0.75;
+		masterGain.connect(audioCtx.destination);
+
+		// Pre-drive and waveshaper
+		preDriveGain = audioCtx.createGain();
+		preDriveGain.gain.value = 1.0;
+
+		waveShaper = audioCtx.createWaveShaper();
+		waveShaper.curve = makeOverdriveCurve(0.3);
+		waveShaper.oversample = "4x";
+
+		// Tone filter (brightness)
+		toneFilter = audioCtx.createBiquadFilter();
+		toneFilter.type = "lowpass";
+		toneFilter.frequency.value = 3000;
+		toneFilter.Q.value = 0.7;
+
+		// Formant-like bandpass
+		formantFilter = audioCtx.createBiquadFilter();
+		formantFilter.type = "bandpass";
+		formantFilter.frequency.value = 800;
+		formantFilter.Q.value = 1.2;
+
+		// Reverb / echo network
+		const convolver = audioCtx.createConvolver();
+		convolver.buffer = createReverbImpulse(audioCtx, 2.0, 3.0);
+
+		reverbDelay = audioCtx.createDelay(1.5);
+		reverbDelay.delayTime.value = 0.35;
+
+		reverbFeedbackGain = audioCtx.createGain();
+		reverbFeedbackGain.gain.value = 0.25;
+
+		reverbMixGain = audioCtx.createGain();
+		reverbMixGain.gain.value = 0.4;
+
+		// Build base chain:
+		// degreeGains -> preDriveGain -> waveShaper -> toneFilter -> formantFilter -> masterGain
+		preDriveGain.connect(waveShaper);
+		waveShaper.connect(toneFilter);
+		toneFilter.connect(formantFilter);
+		formantFilter.connect(masterGain);
+
+		// Reverb side-chain (from formantFilter):
+		formantFilter.connect(reverbDelay);
+		reverbDelay.connect(reverbFeedbackGain);
+		reverbFeedbackGain.connect(reverbDelay); // feedback loop
+		reverbDelay.connect(convolver);
+		convolver.connect(reverbMixGain);
+		reverbMixGain.connect(masterGain);
+
+		// Create oscillators per degree
+		const numDegrees = SCALE.intervals.length;
+		degreeGains = [];
+		degreeOscs = [];
+		const now = audioCtx.currentTime;
+
+		for (let i = 0; i < numDegrees; i++) {
+			const degreeGain = audioCtx.createGain();
+			degreeGain.gain.setValueAtTime(0.0, now);
+			degreeGain.connect(preDriveGain);
+			degreeGains.push(degreeGain);
+
+			const cluster = [];
+			for (let j = 0; j < 4; j++) {
+				const osc = audioCtx.createOscillator();
+				osc.type = j % 2 === 0 ? "sawtooth" : "triangle";
+				const baseMidi = SCALE.rootMidi + SCALE.intervals[i] + currentOctaveOffset * 12;
+				const detuneCents = (j - 1.5) * 7; // small spread
+				osc.frequency.value = midiToFreq(baseMidi);
+				osc.detune.value = detuneCents;
+				osc.connect(degreeGain);
+				osc.start(now + Math.random() * 0.03);
+				cluster.push(osc);
+			}
+			degreeOscs.push(cluster);
+		}
+
+		applyBrightness(parseInt(elSliderBrightness.value, 10));
+		applyOverdrive(parseInt(elSliderOverdrive.value, 10));
+		applyReverb(parseInt(elSliderReverb.value, 10));
+		applyFormant(parseInt(elSliderFormant.value, 10));
+	}
+
+	function updateDegreeFrequencies() {
+		if (!audioCtx) return;
+		for (let i = 0; i < degreeOscs.length; i++) {
+			const cluster = degreeOscs[i];
+			const baseMidi = SCALE.rootMidi + SCALE.intervals[i] + currentOctaveOffset * 12;
+			for (let j = 0; j < cluster.length; j++) {
+				const osc = cluster[j];
+				const detuneCents = (j - 1.5) * 7;
+				osc.frequency.value = midiToFreq(baseMidi);
+				osc.detune.value = detuneCents;
+			}
+		}
+	}
+
+	function setDegreeCrossfade(position) {
+		// position in [0, numDegrees-1] (float)
+		if (!audioCtx || !degreeGains.length) return;
+		const n = degreeGains.length;
+		const t = Math.max(0, Math.min(n - 1, position));
+		const idxA = Math.floor(t);
+		const idxB = Math.min(idxA + 1, n - 1);
+		const frac = t - idxA;
+
+		const now = audioCtx.currentTime;
+		const fadeTimeConstant = 0.15; // fixed for now
+
+		for (let i = 0; i < n; i++) {
+			const gainNode = degreeGains[i];
+			let target = 0.0;
+			if (i === idxA) target = 1.0 - frac;
+			else if (i === idxB) target = frac;
+			gainNode.gain.setTargetAtTime(target, now, fadeTimeConstant);
+		}
+
+		const displayDegree = t;
+		const degreeName = (idxA + 1) + (idxB !== idxA ? `-${idxB + 1}` : "");
+		elBadgeNote.textContent = `${degreeName} / ${displayDegree.toFixed(2)}`;
+	}
+
+	function applyBrightness(value) {
+		if (!toneFilter || !audioCtx) return;
+		const pct = value / 100;
+		const minFreq = 800;
+		const maxFreq = 8000;
+		const freq = minFreq * Math.pow(maxFreq / minFreq, pct);
+		toneFilter.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.06);
+		elValBrightness.textContent = `${value}%`;
+	}
+
+	function applyOverdrive(value) {
+		if (!waveShaper || !preDriveGain || !audioCtx) return;
+		const amount = value / 100; // 0..1
+		preDriveGain.gain.setTargetAtTime(0.5 + amount, audioCtx.currentTime, 0.05);
+		waveShaper.curve = makeOverdriveCurve(amount);
+		elValOverdrive.textContent = `${value}%`;
+	}
+
+	function applyReverb(value) {
+		if (!reverbMixGain || !reverbFeedbackGain || !audioCtx) return;
+		const pct = value / 100;
+		reverbMixGain.gain.setTargetAtTime(0.05 + pct * 0.8, audioCtx.currentTime, 0.1);
+		reverbFeedbackGain.gain.setTargetAtTime(0.1 + pct * 0.4, audioCtx.currentTime, 0.1);
+		elValReverb.textContent = `${value}%`;
+	}
+
+	function applyFormant(value) {
+		if (!formantFilter || !audioCtx) return;
+		const pct = value / 100;
+		const minF = 400;
+		const maxF = 3000;
+		const freq = minF * Math.pow(maxF / minF, pct);
+		const q = 0.7 + pct * 3.3;
+		formantFilter.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.08);
+		formantFilter.Q.setTargetAtTime(q, audioCtx.currentTime, 0.08);
+		elValFormant.textContent = `${value}%`;
+	}
+
+	// ============================== MOTION =================================
+	let motionEnabled = false;
+	let lastMotionTs = null;
+	let gravityVec = { x: 0, y: 0, z: 0 };
+	let forwardAxis = null;
+	let calibAccum = { x: 0, y: 0, z: 0, count: 0 };
+	let isMoving = false;
+	let lastGpsTs = 0;
+
+	let streakPos = 0;
+	let streakNeg = 0;
+
+	let gpsWatchId = null;
+
+	function norm(vec) {
+		return Math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+	}
+
+	function normalize(vec) {
+		const m = norm(vec) || 1;
+		return { x: vec.x / m, y: vec.y / m, z: vec.z / m };
+	}
+
+	function dot(a, b) {
+		return a.x * b.x + a.y * b.y + a.z * b.z;
+	}
+
+	function startGps() {
+		if (!navigator.geolocation) {
+			elBadgeGps.textContent = "unsupported";
+			return;
+		}
+		if (gpsWatchId !== null) return;
+
+		gpsWatchId = navigator.geolocation.watchPosition(
+			(pos) => {
+				const { latitude, longitude, accuracy, speed } = pos.coords;
+				const tMs = pos.timestamp;
+				elBadgeGps.textContent = speed != null
+					? `${(speed * 2.237).toFixed(1)} mph`
+					: "ok";
+				lastGpsTs = tMs;
+				isMoving = (speed != null && speed >= MOTION_CONFIG.speedForMoving);
+
+				// Use GPS for server update
+				sendGps(latitude, longitude, accuracy, tMs);
+			},
+			(err) => {
+				console.warn("GPS error", err);
+				elBadgeGps.textContent = "err";
+			},
+			{
+				enableHighAccuracy: true,
+				maximumAge: 1000,
+				timeout: 5000,
+			}
+		);
+	}
+
+	function stopGps() {
+		if (gpsWatchId !== null && navigator.geolocation) {
+			navigator.geolocation.clearWatch(gpsWatchId);
+			gpsWatchId = null;
+		}
+		elBadgeGps.textContent = "idle";
+		isMoving = false;
+	}
+
+	function motionHandler(event) {
+		const now = performance.now();
+		const dt = lastMotionTs != null ? (now - lastMotionTs) / 1000 : 0.016;
+		lastMotionTs = now;
+
+		const a = event.accelerationIncludingGravity;
+		if (!a) return;
+
+		// Gravity estimate (low-pass)
+		const alpha = MOTION_CONFIG.gravityAlpha;
+		gravityVec.x = alpha * gravityVec.x + (1 - alpha) * (a.x || 0);
+		gravityVec.y = alpha * gravityVec.y + (1 - alpha) * (a.y || 0);
+		gravityVec.z = alpha * gravityVec.z + (1 - alpha) * (a.z || 0);
+
+		const lin = {
+			x: (a.x || 0) - gravityVec.x,
+			y: (a.y || 0) - gravityVec.y,
+			z: (a.z || 0) - gravityVec.z,
+		};
+		const mag = norm(lin);
+
+		// Forward-axis learning when moving
+		if (!forwardAxis && isMoving) {
+			if (
+				mag >= MOTION_CONFIG.minMagForCalib &&
+				mag <= MOTION_CONFIG.maxMagForCalib
+			) {
+				calibAccum.x += lin.x;
+				calibAccum.y += lin.y;
+				calibAccum.z += lin.z;
+				calibAccum.count++;
+			}
+			if (calibAccum.count >= MOTION_CONFIG.calibSamplesNeeded) {
+				const avg = {
+					x: calibAccum.x / calibAccum.count,
+					y: calibAccum.y / calibAccum.count,
+					z: calibAccum.z / calibAccum.count,
+				};
+				forwardAxis = normalize(avg);
+				elStatusCalib.innerHTML =
+					"Forward axis: <strong>locked</strong>";
+			} else {
+				elStatusCalib.innerHTML =
+					`Forward axis: learning… (${calibAccum.count}/${MOTION_CONFIG.calibSamplesNeeded})`;
+			}
+		}
+
+		let forwardAccel = 0;
+		if (forwardAxis) {
+			forwardAccel = dot(normalize(lin), forwardAxis) * mag;
+		} else {
+			// Fallback: use device Y axis (portrait forward) if forward axis not yet learned
+			forwardAccel = lin.y;
+		}
+
+		// Streak logic
+		const th = MOTION_CONFIG.thresholdAccel;
+		const rise = MOTION_CONFIG.streakRisePerSec;
+		const decay = MOTION_CONFIG.streakDecayPerSec;
+
+		if (forwardAccel > th) {
+			streakPos = Math.min(1, streakPos + rise * dt);
+			streakNeg = Math.max(0, streakNeg - decay * dt);
+		} else if (forwardAccel < -th) {
+			streakNeg = Math.min(1, streakNeg + rise * dt);
+			streakPos = Math.max(0, streakPos - decay * dt);
+		} else {
+			streakPos = Math.max(0, streakPos - decay * dt);
+			streakNeg = Math.max(0, streakNeg - decay * dt);
+		}
+
+		const signed = streakPos - streakNeg; // -1..1 ideally
+		const clampedSigned = Math.max(-1, Math.min(1, signed));
+		const streakAbs = Math.max(streakPos, streakNeg);
+
+		elValStreak.textContent = clampedSigned.toFixed(2);
+		elBadgeAccel.textContent = forwardAccel.toFixed(2);
+
+		// Meter: left for braking, right for accel
+		const posWidth = Math.max(0, streakPos);
+		const negWidth = Math.max(0, streakNeg);
+		elMeterPos.style.transform = `scaleX(${posWidth})`;
+		elMeterNeg.style.transform = `scaleX(${negWidth})`;
+
+		// Map signed streak -> degree position
+		const numDegrees = SCALE.intervals.length;
+		const center = (numDegrees - 1) / 2;
+		const degreePos = center + clampedSigned * center; // -1->0, 0->center, +1->n-1
+
+		if (audioCtx) {
+			setDegreeCrossfade(degreePos);
+		}
+
+		// Map streak magnitude to MIDI velocity-ish value (0..127)
+		const velocity = Math.round(streakAbs * 127);
+		const degreeIndex = Math.round(degreePos);
+		sendNoteUpdate(degreeIndex, velocity);
+	}
+
+	function startMotion() {
+		if (motionEnabled) return;
+		motionEnabled = true;
+		lastMotionTs = null;
+		calibAccum = { x: 0, y: 0, z: 0, count: 0 };
+		forwardAxis = null;
+		streakPos = 0;
+		streakNeg = 0;
+		elMeterPos.style.transform = "scaleX(0)";
+		elMeterNeg.style.transform = "scaleX(0)";
+		elStatusMotion.textContent = "Sensors: active";
+		elStatusCalib.innerHTML = "Forward axis: <strong>learning…</strong>";
+
+		// iOS requires explicit permission for motion
+		if (
+			typeof DeviceMotionEvent !== "undefined" &&
+			typeof DeviceMotionEvent.requestPermission === "function"
+		) {
+			DeviceMotionEvent.requestPermission()
+				.then((resp) => {
+					if (resp === "granted") {
+						window.addEventListener("devicemotion", motionHandler, true);
+					} else {
+						elStatusMotion.textContent = "Sensors: denied";
+					}
+				})
+				.catch((err) => {
+					console.warn("Motion permission error", err);
+					elStatusMotion.textContent = "Sensors: error";
+				});
+		} else {
+			window.addEventListener("devicemotion", motionHandler, true);
+		}
+
+		// GPS
+		startGps();
+	}
+
+	function stopMotion() {
+		if (!motionEnabled) return;
+		motionEnabled = false;
+		window.removeEventListener("devicemotion", motionHandler, true);
+		stopGps();
+		elStatusMotion.textContent = "Sensors: idle";
+	}
+
+	// ============================== CONTROL ================================
+	function setRunning(nextRunning) {
+		if (nextRunning === isRunning) return;
+		isRunning = nextRunning;
+
+		if (isRunning) {
+			initAudio();
+			if (audioCtx.state === "suspended") {
+				audioCtx.resume();
+			}
+			startMotion();
+			elBtnToggle.dataset.state = "running";
+			elBtnLabel.textContent = "Stop synth";
+		} else {
+			stopMotion();
+			if (audioCtx) {
+				masterGain.gain.setTargetAtTime(0.0, audioCtx.currentTime, 0.1);
+			}
+			elBtnToggle.dataset.state = "stopped";
+			elBtnLabel.textContent = "Start synth";
+		}
+	}
+
+	// =========================== EVENT BINDINGS ============================
+	elBtnToggle.addEventListener("click", () => {
+		if (!audioCtx) {
+			// First time: user gesture, start everything
+			initAudio();
+		}
+		if (audioCtx && audioCtx.state === "suspended") {
+			audioCtx.resume();
+		}
+		setRunning(!isRunning);
+	});
+
+	octaveButtons.forEach((btn) => {
+		btn.addEventListener("click", () => {
+			const key = btn.dataset.octave;
+			if (!OCTAVE_BANDS.hasOwnProperty(key)) return;
+			currentOctaveKey = key;
+			currentOctaveOffset = OCTAVE_BANDS[key];
+			octaveButtons.forEach((b) => {
+				b.dataset.selected = b === btn ? "true" : "false";
+			});
+			updateDegreeFrequencies();
+		});
+	});
+
+	elSliderBrightness.addEventListener("input", () => {
+		applyBrightness(parseInt(elSliderBrightness.value, 10));
+	});
+	elSliderOverdrive.addEventListener("input", () => {
+		applyOverdrive(parseInt(elSliderOverdrive.value, 10));
+	});
+	elSliderReverb.addEventListener("input", () => {
+		applyReverb(parseInt(elSliderReverb.value, 10));
+	});
+	elSliderFormant.addEventListener("input", () => {
+		applyFormant(parseInt(elSliderFormant.value, 10));
+	});
+
+	let nameChangeTimer = null;
+	elInputName.addEventListener("input", () => {
+		const name = elInputName.value.trim();
+		myName = name;
+		try {
+			localStorage.setItem("synth-rider-name", myName);
+		} catch (_) {}
+		if (nameChangeTimer) {
+			clearTimeout(nameChangeTimer);
+		}
+		nameChangeTimer = setTimeout(() => {
+			sendHello();
+		}, 400);
+	});
+
+	// =============================== INIT =================================
+	(function init() {
+		ensureClientId();
+		setConnectionStatus("WS: connecting…", false);
+
+		try {
+			const storedName = localStorage.getItem("synth-rider-name");
+			if (storedName) {
+				myName = storedName;
+				elInputName.value = storedName;
+			}
+		} catch (_) {}
+
+		connectWebSocket();
+	})();
+</script>
+</body>
+</html>
