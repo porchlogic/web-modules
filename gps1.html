@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<title>GPS Update & Velocity Tester</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<style>
+		body {
+			font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+			background: #111;
+			color: #eee;
+			margin: 0;
+			padding: 1rem;
+		}
+		h1 {
+			font-size: 1.4rem;
+			margin-bottom: 0.5rem;
+		}
+		button {
+			font-size: 1rem;
+			padding: 0.6rem 1rem;
+			border-radius: 0.4rem;
+			border: none;
+			background: #2a7bff;
+			color: white;
+			cursor: pointer;
+			margin-right: 0.5rem;
+		}
+		button[disabled] {
+			opacity: 0.4;
+			cursor: default;
+		}
+		#status {
+			margin-top: 0.5rem;
+			font-size: 0.9rem;
+			color: #ccc;
+		}
+		.stats {
+			margin-top: 1rem;
+			padding: 0.75rem;
+			border-radius: 0.5rem;
+			background: #181818;
+			font-size: 0.9rem;
+		}
+		.stats div {
+			margin-bottom: 0.25rem;
+		}
+		table {
+			width: 100%;
+			border-collapse: collapse;
+			margin-top: 1rem;
+			font-size: 0.8rem;
+		}
+		th, td {
+			border-bottom: 1px solid #333;
+			padding: 0.25rem 0.35rem;
+			text-align: right;
+			white-space: nowrap;
+		}
+		th:first-child, td:first-child {
+			text-align: left;
+		}
+		tbody {
+			max-height: 50vh;
+			overflow-y: auto;
+			display: block;
+		}
+		thead, tbody tr {
+			display: table;
+			width: 100%;
+			table-layout: fixed;
+		}
+		.bad {
+			color: #ff7070;
+		}
+		.good {
+			color: #7dff7d;
+		}
+	</style>
+</head>
+<body>
+	<h1>GPS Update & Velocity Tester</h1>
+	<p>Start this on your phone, give it location permission, and move around. It will log how often GPS updates arrive and the velocity between them.</p>
+	<div>
+		<button id="startBtn">Start</button>
+		<button id="stopBtn" disabled>Stop</button>
+	</div>
+	<div id="status">Idle.</div>
+
+	<div class="stats">
+		<div><strong>Updates:</strong> <span id="count">0</span></div>
+		<div><strong>Last interval:</strong> <span id="lastInterval">–</span> s</div>
+		<div><strong>Average interval:</strong> <span id="avgInterval">–</span> s</div>
+		<div><strong>Last velocity:</strong> <span id="lastVelocity">–</span> m/s (<span id="lastVelocityKmh">–</span> km/h)</div>
+		<div><strong>Last distance:</strong> <span id="lastDistance">–</span> m</div>
+		<div><strong>Accuracy (last):</strong> <span id="lastAccuracy">–</span> m</div>
+	</div>
+
+	<table>
+		<thead>
+			<tr>
+				<th>#</th>
+				<th>Time</th>
+				<th>Δt (s)</th>
+				<th>Dist (m)</th>
+				<th>Vel (m/s)</th>
+				<th>Vel (km/h)</th>
+				<th>Acc (m)</th>
+			</tr>
+		</thead>
+		<tbody id="logBody"></tbody>
+	</table>
+
+	<script>
+		let watchId = null;
+		let lastTimestamp = null;
+		let lastLat = null;
+		let lastLon = null;
+		let count = 0;
+		let totalInterval = 0;
+
+		const startBtn = document.getElementById("startBtn");
+		const stopBtn = document.getElementById("stopBtn");
+		const statusEl = document.getElementById("status");
+
+		const countEl = document.getElementById("count");
+		const lastIntervalEl = document.getElementById("lastInterval");
+		const avgIntervalEl = document.getElementById("avgInterval");
+		const lastVelocityEl = document.getElementById("lastVelocity");
+		const lastVelocityKmhEl = document.getElementById("lastVelocityKmh");
+		const lastDistanceEl = document.getElementById("lastDistance");
+		const lastAccuracyEl = document.getElementById("lastAccuracy");
+		const logBody = document.getElementById("logBody");
+
+		function haversine(lat1, lon1, lat2, lon2) {
+			const R = 6371000; // meters
+			const toRad = x => x * Math.PI / 180;
+			const φ1 = toRad(lat1);
+			const φ2 = toRad(lat2);
+			const Δφ = toRad(lat2 - lat1);
+			const Δλ = toRad(lon2 - lon1);
+
+			const a = Math.sin(Δφ / 2) ** 2 +
+				Math.cos(φ1) * Math.cos(φ2) *
+				Math.sin(Δλ / 2) ** 2;
+			const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+			return R * c;
+		}
+
+		function formatTime(ts) {
+			const d = new Date(ts);
+			return d.toISOString().split("T")[1].replace("Z", "");
+		}
+
+		function handlePosition(pos) {
+			const { latitude, longitude, accuracy } = pos.coords;
+			const ts = pos.timestamp;
+			let interval = null;
+			let distance = null;
+			let velocity = null;
+			let velocityKmh = null;
+
+			count++;
+			countEl.textContent = count;
+
+			if (lastTimestamp !== null && lastLat !== null && lastLon !== null) {
+				const dt = (ts - lastTimestamp) / 1000; // seconds
+				interval = dt;
+				totalInterval += dt;
+
+				distance = haversine(lastLat, lastLon, latitude, longitude); // meters
+
+				if (dt > 0) {
+					velocity = distance / dt; // m/s
+					velocityKmh = velocity * 3.6;
+				}
+
+				lastIntervalEl.textContent = interval.toFixed(2);
+				avgIntervalEl.textContent = (totalInterval / (count - 1)).toFixed(2);
+
+				lastDistanceEl.textContent = distance.toFixed(1);
+				if (velocity !== null) {
+					lastVelocityEl.textContent = velocity.toFixed(2);
+					lastVelocityKmhEl.textContent = velocityKmh.toFixed(2);
+				}
+			} else {
+				lastIntervalEl.textContent = "–";
+				avgIntervalEl.textContent = "–";
+				lastDistanceEl.textContent = "–";
+				lastVelocityEl.textContent = "–";
+				lastVelocityKmhEl.textContent = "–";
+			}
+
+			lastAccuracyEl.textContent = accuracy?.toFixed(1) ?? "–";
+
+			// Log row
+			const tr = document.createElement("tr");
+			const velClass = (velocityKmh !== null && velocityKmh > 1) ? "good" : "";
+			tr.innerHTML = `
+				<td>${count}</td>
+				<td>${formatTime(ts)}</td>
+				<td>${interval !== null ? interval.toFixed(2) : "–"}</td>
+				<td>${distance !== null ? distance.toFixed(1) : "–"}</td>
+				<td>${velocity !== null ? velocity.toFixed(2) : "–"}</td>
+				<td class="${velClass}">${velocityKmh !== null ? velocityKmh.toFixed(2) : "–"}</td>
+				<td>${accuracy !== null ? accuracy.toFixed(1) : "–"}</td>
+			`;
+			logBody.prepend(tr);
+
+			lastTimestamp = ts;
+			lastLat = latitude;
+			lastLon = longitude;
+
+			statusEl.textContent = `Last fix: lat ${latitude.toFixed(6)}, lon ${longitude.toFixed(6)}`;
+		}
+
+		function handleError(err) {
+			statusEl.innerHTML = `<span class="bad">Error: ${err.message}</span>`;
+		}
+
+		startBtn.addEventListener("click", () => {
+			if (!("geolocation" in navigator)) {
+				statusEl.innerHTML = '<span class="bad">Geolocation not supported in this browser.</span>';
+				return;
+			}
+
+			// reset state
+			count = 0;
+			totalInterval = 0;
+			lastTimestamp = null;
+			lastLat = null;
+			lastLon = null;
+			logBody.innerHTML = "";
+			countEl.textContent = "0";
+			lastIntervalEl.textContent = "–";
+			avgIntervalEl.textContent = "–";
+			lastVelocityEl.textContent = "–";
+			lastVelocityKmhEl.textContent = "–";
+			lastDistanceEl.textContent = "–";
+			lastAccuracyEl.textContent = "–";
+
+			statusEl.textContent = "Requesting location…";
+
+			watchId = navigator.geolocation.watchPosition(
+				handlePosition,
+				handleError,
+				{
+					enableHighAccuracy: true,
+					maximumAge: 0,
+					timeout: 15000,
+				}
+			);
+
+			startBtn.disabled = true;
+			stopBtn.disabled = false;
+		});
+
+		stopBtn.addEventListener("click", () => {
+			if (watchId !== null) {
+				navigator.geolocation.clearWatch(watchId);
+				watchId = null;
+			}
+			statusEl.textContent = "Stopped.";
+			startBtn.disabled = false;
+			stopBtn.disabled = true;
+		});
+	</script>
+</body>
+  </html>
