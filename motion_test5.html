@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Vector Engine Pro</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .hud-ring {
+            width: 260px;
+            height: 260px;
+            border-radius: 50%;
+            border: 4px solid #333;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle, #222 0%, #111 100%);
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+        }
+
+        /* The dynamic ring indicating Gas vs Brake */
+        .status-ring {
+            position: absolute;
+            top: -4px;
+            left: -4px;
+            right: -4px;
+            bottom: -4px;
+            border-radius: 50%;
+            border: 4px solid transparent;
+            transition: border-color 0.2s;
+        }
+
+        .accel-mode .status-ring {
+            border-top-color: #00ff88;
+            border-right-color: #00ff88;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+        }
+
+        .brake-mode .status-ring {
+            border-bottom-color: #ff3333;
+            border-left-color: #ff3333;
+            box-shadow: 0 0 20px rgba(255, 51, 51, 0.2);
+        }
+
+        .speed-readout {
+            font-size: 5rem;
+            font-weight: 800;
+            line-height: 1;
+            z-index: 2;
+        }
+
+        .unit {
+            font-size: 1rem;
+            color: #888;
+            text-transform: uppercase;
+            margin-top: 5px;
+        }
+
+        .force-label {
+            margin-top: 15px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            padding: 4px 12px;
+            border-radius: 12px;
+            background: #222;
+            transition: all 0.2s;
+        }
+
+        .calib-status {
+            position: absolute;
+            bottom: 30px;
+            font-size: 0.7rem;
+            color: #666;
+            text-align: center;
+            width: 80%;
+        }
+
+        button {
+            margin-top: 40px;
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            border: none;
+            border-radius: 30px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(0, 123, 255, 0.4);
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="hud-ring" id="hud">
+        <div class="status-ring"></div>
+        <div class="speed-readout" id="speed">0</div>
+        <div class="unit">MPH</div>
+        <div class="force-label" id="force-type">NEUTRAL</div>
+    </div>
+
+    <div class="calib-status" id="debug">Tap Start & Ride Forward</div>
+
+    <button id="start-btn" onclick="initApp()">START ENGINE</button>
+
+    <script>
+        // --- CONFIGURATION ---
+        // Minimum speed (mph) to accept a calibration "Lock"
+        const MIN_CALIB_SPEED = 4.0;
+        // Smoothing factor for gravity isolation
+        const GRAVITY_ALPHA = 0.8;
+        
+        // --- STATE ---
+        let gravity = { x: 0, y: 0, z: 0 };
+        let forwardVector = { x: 0, y: 0, z: 0 }; // The learned "forward" direction
+        let isCalibrated = false;
+        
+        let gpsSpeed = 0;
+        let lastGpsSpeed = 0;
+        
+        // The "Force" calculated via Dot Product (-1.0 to 1.0)
+        // Positive = Gas, Negative = Brake
+        let currentForce = 0; 
+        
+        let audioCtx, oscSaw, oscSine, gainNode, filterNode;
+        let isRunning = false;
+
+        const uiSpeed = document.getElementById('speed');
+        const uiForce = document.getElementById('force-type');
+        const uiDebug = document.getElementById('debug');
+        const uiHud = document.getElementById('hud');
+
+        // --- AUDIO ENGINE (Hybrid) ---
+        function initAudio() {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AC();
+
+            // 1. Sawtooth (The Growl/Engine)
+            oscSaw = audioCtx.createOscillator();
+            oscSaw.type = 'sawtooth';
+            oscSaw.frequency.value = 80;
+
+            // 2. Sine (The Whine/Turbo)
+            oscSine = audioCtx.createOscillator();
+            oscSine.type = 'sine';
+            oscSine.frequency.value = 120;
+
+            // Filter (Lowpass)
+            filterNode = audioCtx.createBiquadFilter();
+            filterNode.type = 'lowpass';
+            filterNode.frequency.value = 300;
+            filterNode.Q.value = 1.0;
+
+            // Master Gain
+            gainNode = audioCtx.createGain();
+            gainNode.gain.value = 0.0;
+
+            // Mixing
+            oscSaw.connect(filterNode);
+            oscSine.connect(filterNode); // Connect both to filter
+            filterNode.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            oscSaw.start();
+            oscSine.start();
+        }
+
+        function updateSound(speedMph, force) {
+            if (!audioCtx) return;
+
+            // PITCH LOGIC
+            // Base pitch comes from Speed
+            let baseFreq = 60 + (speedMph * 10);
+
+            // Force modifies pitch:
+            // Accelerating adds "revs" (Pitch UP)
+            // Braking drags "revs" (Pitch DOWN)
+            let pitchMod = force * 60; // +/- 60Hz based on gas/brake
+
+            let finalPitch = baseFreq + pitchMod;
+            if (finalPitch < 50) finalPitch = 50; // Floor
+
+            oscSaw.frequency.setTargetAtTime(finalPitch, audioCtx.currentTime, 0.1);
+            oscSine.frequency.setTargetAtTime(finalPitch * 1.5, audioCtx.currentTime, 0.1); // Harmonic
+
+            // FILTER LOGIC
+            // Gas opens the filter (Brighter sound)
+            // Brake closes the filter (Muffled sound)
+            let filterMod = (force > 0) ? (force * 1000) : (force * 200); 
+            let targetFilter = 200 + (speedMph * 80) + filterMod;
+            filterNode.frequency.setTargetAtTime(targetFilter, audioCtx.currentTime, 0.1);
+
+            // VOLUME LOGIC
+            // Louder when fast, Louder when hard gas, Medium when braking
+            let vol = 0.1 + (speedMph * 0.01) + (Math.abs(force) * 0.3);
+            if (vol > 0.6) vol = 0.6;
+            if (speedMph < 1 && Math.abs(force) < 0.2) vol = 0; // Idle mute
+
+            gainNode.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
+        }
+
+        // --- PHYSICS ENGINE ---
+        
+        // 1. GPS (Provides Baseline Speed & Triggers Calibration)
+        function startGPS() {
+            navigator.geolocation.watchPosition(pos => {
+                let mps = pos.coords.speed || 0;
+                if (mps < 0) mps = 0;
+                gpsSpeed = mps * 2.237; // Convert to MPH
+
+                // CALIBRATION LOGIC
+                // If we are moving faster than 4mph AND speeding up...
+                // We assume the phone is currently moving FORWARD.
+                if (gpsSpeed > MIN_CALIB_SPEED && gpsSpeed > lastGpsSpeed + 0.5) {
+                    calibrateForwardVector();
+                }
+
+                lastGpsSpeed = gpsSpeed;
+                uiSpeed.textContent = Math.round(gpsSpeed);
+            }, e => console.log(e), { enableHighAccuracy: true });
+        }
+
+        // 2. The Vector Math (Calculates Gas vs Brake)
+        function handleMotion(e) {
+            const acc = e.accelerationIncludingGravity;
+            if (!acc) return;
+
+            // A. Isolate Gravity (Low Pass Filter)
+            gravity.x = GRAVITY_ALPHA * gravity.x + (1 - GRAVITY_ALPHA) * acc.x;
+            gravity.y = GRAVITY_ALPHA * gravity.y + (1 - GRAVITY_ALPHA) * acc.y;
+            gravity.z = GRAVITY_ALPHA * gravity.z + (1 - GRAVITY_ALPHA) * acc.z;
+
+            // B. Calculate Linear Acceleration (Raw - Gravity)
+            // This is the actual movement force vector
+            let linearX = acc.x - gravity.x;
+            let linearY = acc.y - gravity.y;
+            let linearZ = acc.z - gravity.z;
+
+            // Store this globally for the calibration function to grab
+            window.currentLinear = { x: linearX, y: linearY, z: linearZ };
+
+            if (!isCalibrated) {
+                uiDebug.textContent = "Ride forward to calibrate...";
+                // Fallback: just use Magnitude if not calibrated yet
+                currentForce = Math.sqrt(linearX**2 + linearY**2 + linearZ**2);
+                return;
+            }
+
+            // C. Dot Product
+            // Project current movement onto the known Forward Vector
+            // Formula: (Ax * Bx) + (Ay * By) + (Az * Bz)
+            let dot = (linearX * forwardVector.x) + 
+                      (linearY * forwardVector.y) + 
+                      (linearZ * forwardVector.z);
+
+            // D. Smoothing
+            // Smooth the dot product result to prevent audio glitches
+            currentForce = (currentForce * 0.8) + (dot * 0.2);
+
+            updateVisuals(currentForce);
+        }
+
+        function calibrateForwardVector() {
+            if (!window.currentLinear) return;
+            
+            // Grab the current linear acceleration vector
+            let lx = window.currentLinear.x;
+            let ly = window.currentLinear.y;
+            let lz = window.currentLinear.z;
+
+            // Normalize it (make length = 1)
+            let magnitude = Math.sqrt(lx*lx + ly*ly + lz*lz);
+            if (magnitude < 1.0) return; // Too weak to calibrate
+
+            forwardVector.x = lx / magnitude;
+            forwardVector.y = ly / magnitude;
+            forwardVector.z = lz / magnitude;
+
+            isCalibrated = true;
+            uiDebug.textContent = "Orientation Locked. Gas/Brake Active.";
+            uiDebug.style.color = "#00ff88";
+        }
+
+        // --- ANIMATION & LOOP ---
+        function updateVisuals(force) {
+            // Thresholds for display
+            if (force > 1.5) {
+                uiForce.textContent = "ACCELERATING";
+                uiForce.style.color = "#00ff88";
+                uiHud.className = "hud-ring accel-mode";
+            } else if (force < -1.5) {
+                uiForce.textContent = "BRAKING";
+                uiForce.style.color = "#ff3333";
+                uiHud.className = "hud-ring brake-mode";
+            } else {
+                uiForce.textContent = "COASTING";
+                uiForce.style.color = "#888";
+                uiHud.className = "hud-ring";
+            }
+        }
+
+        function loop() {
+            if (isRunning) {
+                updateSound(gpsSpeed, currentForce);
+                requestAnimationFrame(loop);
+            }
+        }
+
+        // --- INIT ---
+        function initApp() {
+            initAudio();
+            startGPS();
+            
+            if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                DeviceMotionEvent.requestPermission().then(r => {
+                    if (r === 'granted') startSensors();
+                });
+            } else {
+                startSensors();
+            }
+        }
+
+        function startSensors() {
+            window.addEventListener('devicemotion', handleMotion);
+            isRunning = true;
+            document.getElementById('start-btn').style.display = 'none';
+            loop();
+        }
+
+    </script>
+</body>
+
+</html>
