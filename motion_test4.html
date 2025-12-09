@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Scooter Synth</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .hud {
+            text-align: center;
+            border: 2px solid #0f0;
+            padding: 20px;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 350px;
+            background: rgba(0, 20, 0, 0.8);
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.2);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1rem;
+            opacity: 0.7;
+        }
+
+        .speed-container {
+            margin: 20px 0;
+            position: relative;
+        }
+
+        #speed-val {
+            font-size: 5rem;
+            font-weight: bold;
+            line-height: 1;
+            text-shadow: 0 0 10px #0f0;
+        }
+
+        .unit {
+            font-size: 1rem;
+            opacity: 0.8;
+        }
+
+        .bars {
+            display: flex;
+            height: 10px;
+            gap: 2px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        .bar {
+            width: 10%;
+            background: #003300;
+            transition: background 0.1s;
+        }
+
+        .active-bar {
+            background: #0f0;
+            box-shadow: 0 0 5px #0f0;
+        }
+
+        button {
+            margin-top: 20px;
+            background: #0f0;
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+
+        #status {
+            margin-top: 15px;
+            font-size: 0.7rem;
+            color: #0a0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="hud">
+        <h1>E-SCOOTER SYNTH</h1>
+
+        <div class="speed-container">
+            <div id="speed-val">0</div>
+            <span class="unit">MPH</span>
+        </div>
+
+        <div class="bars" id="load-bars">
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+        </div>
+
+        <button id="start-btn" onclick="initApp()">Ignition</button>
+        <div id="status">Tap Ignition to Start</div>
+    </div>
+
+    <script>
+        // --- TUNING KNOBS ---
+        // How much does the GPS speed influence the sound?
+        const BASE_PITCH = 100;
+        const PITCH_PER_MPH = 15;
+
+        // How much does acceleration "boost" the perceived speed?
+        // Higher = snappier throttle response, but more jitter
+        const ACCEL_BOOST_FACTOR = 5.0;
+
+        // --- STATE ---
+        let gpsSpeedMph = 0;       // The "Truth" (laggy)
+        let accelMagnitude = 0;    // The "Kick" (instant)
+        let simulatedSpeed = 0;    // The Combined Value
+        let audioCtx, osc, gain, filter;
+        let isRunning = false;
+
+        const speedDisplay = document.getElementById('speed-val');
+        const loadBars = document.querySelectorAll('.bar');
+        const status = document.getElementById('status');
+        const btn = document.getElementById('start-btn');
+
+        // --- 1. AUDIO ENGINE (Sci-Fi Hum) ---
+        function initAudio() {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+
+            // 1. Oscillator (Drone)
+            osc = audioCtx.createOscillator();
+            osc.type = 'sawtooth'; // Buzzy base
+            osc.frequency.value = BASE_PITCH;
+
+            // 2. Filter (Muffler)
+            // Lowpass filter: sounds dull at low speed, bright at high speed
+            filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.Q.value = 1; // Resonance
+            filter.frequency.value = 200;
+
+            // 3. Gain (Volume)
+            gain = audioCtx.createGain();
+            gain.gain.value = 0.0;
+
+            // Connect
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.start();
+        }
+
+        function updateSound(speed, load) {
+            if (!audioCtx) return;
+
+            // PITCH: Based primarily on Speed
+            // We add a little bit of "load" to the pitch to make it "whine" when accelerating
+            const targetPitch = BASE_PITCH + (speed * PITCH_PER_MPH) + (load * 50);
+            osc.frequency.setTargetAtTime(targetPitch, audioCtx.currentTime, 0.1);
+
+            // FILTER: Opens up based on Speed
+            const targetFreq = 200 + (speed * 100);
+            filter.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.1);
+
+            // VOLUME: 
+            // If we are stopped (0 speed, 0 load), volume drops to near zero
+            // If we are moving OR accelerating, volume goes up
+            let targetVol = 0.05 + (speed * 0.02) + (load * 0.1);
+            if (targetVol > 0.5) targetVol = 0.5; // Max volume cap
+            if (speed < 1 && load < 0.2) targetVol = 0; // Idle mute
+
+            gain.gain.setTargetAtTime(targetVol, audioCtx.currentTime, 0.1);
+        }
+
+        // --- 2. GPS HANDLER (The Baseline) ---
+        function startGPS() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.watchPosition(
+                    (position) => {
+                        // Speed is in m/s, convert to mph (x 2.237)
+                        let speedMs = position.coords.speed;
+                        if (speedMs === null || speedMs < 0) speedMs = 0;
+
+                        // Smooth the GPS update slightly
+                        gpsSpeedMph = speedMs * 2.23694;
+
+                        status.textContent = `GPS Accuracy: ${Math.round(position.coords.accuracy)}m`;
+                    },
+                    (err) => status.textContent = "GPS Error: " + err.message,
+                    {
+                        enableHighAccuracy: true,
+                        maximumAge: 0
+                    }
+                );
+            } else {
+                status.textContent = "GPS not supported";
+            }
+        }
+
+        // --- 3. ACCELEROMETER HANDLER (The Booster) ---
+        function handleMotion(event) {
+            // "acceleration" (without gravity) is best for vehicles
+            // If unavailable, fallback to "accelerationIncludingGravity"
+            const acc = event.acceleration || event.accelerationIncludingGravity;
+
+            if (!acc) return;
+
+            // Calculate simple magnitude of force
+            // Note: In a pocket, we don't know "forward", so we just measure "Change"
+            // This means braking will also rev the engine slightly (Simulates "Downshifting")
+            let mag = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
+
+            // If we used fallback, remove gravity approx
+            if (!event.acceleration) mag = Math.abs(mag - 9.8);
+
+            // Noise gate
+            if (mag < 0.3) mag = 0;
+
+            // Smooth the accelerometer value (Reaction time)
+            accelMagnitude = accelMagnitude * 0.8 + mag * 0.2;
+        }
+
+        // --- 4. THE LOOP (Sensor Fusion) ---
+        function loop() {
+            if (!isRunning) return;
+
+            // THE FUSION ALGORITHM
+            // 1. Start with the GPS speed (Reliable, but slow)
+            // 2. Add the Accelerometer "Boost" (Instant, but temporary)
+
+            // We dampen the boost so it only affects the reading during the specific moment of acceleration
+            let boost = accelMagnitude * ACCEL_BOOST_FACTOR;
+
+            // "Simulated Speed" is what the user feels/hears
+            // It drifts towards the true GPS speed, but jumps up when 'boost' is high
+            // We use a blend: 95% GPS, 5% instantaneous force
+            simulatedSpeed = (simulatedSpeed * 0.9) + ((gpsSpeedMph + boost) * 0.1);
+
+            // Cap at 0
+            if (simulatedSpeed < 0) simulatedSpeed = 0;
+
+            // UPDATE UI
+            speedDisplay.textContent = Math.round(simulatedSpeed);
+
+            // Update Load Bars (Visualizing the G-Force)
+            const activeBars = Math.min(10, Math.floor(accelMagnitude * 2));
+            loadBars.forEach((bar, i) => {
+                bar.className = i < activeBars ? 'bar active-bar' : 'bar';
+            });
+
+            // UPDATE SOUND
+            updateSound(simulatedSpeed, accelMagnitude);
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- INIT ---
+        function initApp() {
+            initAudio();
+            startGPS();
+
+            // Request Motion Permission (iOS 13+)
+            if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                DeviceMotionEvent.requestPermission()
+                    .then(r => {
+                        if (r === 'granted') {
+                            window.addEventListener('devicemotion', handleMotion);
+                            startLoop();
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                window.addEventListener('devicemotion', handleMotion);
+                startLoop();
+            }
+        }
+
+        function startLoop() {
+            isRunning = true;
+            btn.style.display = 'none';
+            status.textContent = "Acquiring Satellites...";
+            loop();
+        }
+    </script>
+</body>
+
+</html>
