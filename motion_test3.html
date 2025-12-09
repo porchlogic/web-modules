@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Runner Engine Synth</title>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .container {
+            text-align: center;
+            width: 80%;
+            max-width: 400px;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 2rem;
+            color: #ccc;
+        }
+
+        #rpm-display {
+            font-size: 4rem;
+            font-weight: bold;
+            font-variant-numeric: tabular-nums;
+            color: #ff4757;
+            text-shadow: 0 0 20px rgba(255, 71, 87, 0.5);
+        }
+
+        .label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        /* The Visual Gauge */
+        .gauge-container {
+            width: 100%;
+            height: 20px;
+            background: #333;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 40px;
+            box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5);
+        }
+
+        .gauge-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #2ed573, #ffa502, #ff4757);
+            transition: width 0.1s linear;
+            /* Matches our smoothing rate */
+        }
+
+        button {
+            background: #3742fa;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(55, 66, 250, 0.4);
+            transition: transform 0.1s;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        button:disabled {
+            background: #555;
+            color: #888;
+            box-shadow: none;
+        }
+
+        .debug {
+            margin-top: 20px;
+            font-size: 0.7rem;
+            color: #555;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>Run Engine</h1>
+
+        <div id="rpm-display">00</div>
+        <div class="label">Intensity</div>
+
+        <div class="gauge-container">
+            <div id="gauge" class="gauge-fill"></div>
+        </div>
+
+        <button id="start-btn" onclick="initApp()">Start Engine</button>
+
+        <div class="debug" id="status">Ready to start...</div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        // How much smoothing? 0.05 = heavy truck, 0.3 = F1 car
+        const SMOOTHING = 0.1; 
+        // Sensitivity: How hard do you have to run to max out?
+        const SENSITIVITY = 0.15; 
+        
+        // --- STATE ---
+        let currentRpm = 0; // 0.0 to 1.0
+        let targetRpm = 0;
+        let audioCtx, oscillator, gainNode, filterNode;
+        let isRunning = false;
+
+        const display = document.getElementById('rpm-display');
+        const gauge = document.getElementById('gauge');
+        const status = document.getElementById('status');
+        const btn = document.getElementById('start-btn');
+
+        // --- AUDIO ENGINE ---
+        // We synthesize a sound so we don't need external MP3 files
+        function initAudio() {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+
+            // 1. Create Oscillator (The sound source)
+            oscillator = audioCtx.createOscillator();
+            // Sawtooth waves sound buzzy/mechanical, like an engine
+            oscillator.type = 'sawtooth'; 
+            oscillator.frequency.value = 60; // Idle rumble pitch
+
+            // 2. Create Gain (Volume control)
+            gainNode = audioCtx.createGain();
+            gainNode.gain.value = 0.1; // Start quiet
+
+            // 3. Create Filter (Makes it sound muffled at low speeds)
+            filterNode = audioCtx.createBiquadFilter();
+            filterNode.type = 'lowpass';
+            filterNode.frequency.value = 200;
+
+            // Connect the chain: Oscillator -> Filter -> Gain -> Speakers
+            oscillator.connect(filterNode);
+            filterNode.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            oscillator.start();
+        }
+
+        function updateEngineSound(intensity) {
+            if (!audioCtx) return;
+
+            // Map intensity (0.0 - 1.0) to Pitch (Frequency)
+            // Idle: 60Hz, Max: 300Hz
+            const pitch = 60 + (intensity * 240); 
+            oscillator.frequency.setTargetAtTime(pitch, audioCtx.currentTime, 0.1);
+
+            // Map intensity to Volume
+            // We want it to get louder as you go faster
+            const volume = 0.1 + (intensity * 0.4);
+            gainNode.gain.setTargetAtTime(volume, audioCtx.currentTime, 0.1);
+
+            // Map intensity to Filter (Open the filter as you go faster)
+            // This makes the sound "brighter" at high speeds
+            const filterFreq = 200 + (intensity * 1000);
+            filterNode.frequency.setTargetAtTime(filterFreq, audioCtx.currentTime, 0.1);
+        }
+
+        // --- SENSOR LOGIC ---
+        function handleMotion(event) {
+            // Get acceleration including gravity (x, y, z)
+            const acc = event.accelerationIncludingGravity;
+
+            if (!acc || acc.x === null) return;
+
+            // Calculate total magnitude of force vector
+            const magnitude = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
+
+            // Subtract gravity (approx 9.8) to find "movement energy"
+            // We use absolute value so "down" and "up" both count as energy
+            let energy = Math.abs(magnitude - 9.8);
+
+            // Noise gate: ignore tiny jitters (standing still)
+            if (energy < 0.5) energy = 0;
+
+            // Convert energy to a 0.0 - 1.0 scale based on sensitivity
+            let rawInput = energy * SENSITIVITY;
+            
+            // Clamp to max 1.0
+            if (rawInput > 1.0) rawInput = 1.0;
+
+            // Set the target for our smoothing loop
+            targetRpm = rawInput;
+        }
+
+        // --- ANIMATION LOOP ---
+        // We use requestAnimationFrame for smooth updates decoupled from sensor rate
+        function loop() {
+            if (!isRunning) return;
+
+            // Smooth the value (Simple Low Pass Filter)
+            // This prevents the sound from jittering wildly
+            currentRpm += (targetRpm - currentRpm) * SMOOTHING;
+
+            // Update Visuals
+            const percentage = Math.round(currentRpm * 100);
+            display.textContent = percentage;
+            gauge.style.width = percentage + "%";
+
+            // Update Audio
+            updateEngineSound(currentRpm);
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- INITIALIZATION & PERMISSIONS ---
+        function initApp() {
+            // 1. Init Audio Context (Must happen on user interaction)
+            initAudio();
+            
+            // 2. Request Sensor Permissions (iOS 13+ requirement)
+            if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                DeviceMotionEvent.requestPermission()
+                    .then(response => {
+                        if (response === 'granted') {
+                            startSensors();
+                        } else {
+                            status.textContent = "Permission denied. Reset permissions and try again.";
+                        }
+                    })
+                    .catch(e => {
+                        status.textContent = "Error: " + e;
+                    });
+            } else {
+                // Non-iOS devices (or older iOS)
+                startSensors();
+            }
+        }
+
+        function startSensors() {
+            window.addEventListener('devicemotion', handleMotion);
+            isRunning = true;
+            btn.disabled = true;
+            btn.textContent = "Engine Running";
+            status.textContent = "Sensors active. Put phone in pocket and RUN!";
+            loop();
+        }
+
+    </script>
+</body>
+
+</html>

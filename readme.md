@@ -15,3 +15,11 @@ motion1 : learns your forward direction from GPS, then uses only the acceleromet
 riders1 : Group Glide — Single Note with Scale Crossfade
 
 synth-rider : Drone synth driven by your acceleration. Connect, start, and ride.
+
+
+
+
+
+## motion1
+
+always periodically getting 
