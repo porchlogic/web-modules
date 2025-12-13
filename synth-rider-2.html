@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PEV Speed Feel Meter</title>
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            background: #0b0f14;
+            color: #e8eef7;
+        }
+
+        .wrap {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 18px;
+        }
+
+        .row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .card {
+            background: #111926;
+            border: 1px solid #1f2a3a;
+            border-radius: 14px;
+            padding: 14px;
+        }
+
+        .big {
+            font-size: 54px;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+        }
+
+        .sub {
+            opacity: .8;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #1f2a3a;
+            margin: 14px 0;
+        }
+
+        label {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            margin: 10px 0 6px;
+            font-size: 14px;
+            opacity: .95;
+        }
+
+        input[type="range"] {
+            width: 100%;
+        }
+
+        button {
+            background: #1c2b40;
+            color: #e8eef7;
+            border: 1px solid #2a3f5f;
+            padding: 10px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        @media (max-width: 760px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .big {
+                font-size: 46px;
+            }
+        }
+
+        .meter {
+            height: 16px;
+            background: #0c121c;
+            border: 1px solid #20314a;
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #2ee59d, #2e7de5, #e52e86);
+        }
+
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            font-size: 12px;
+            opacity: .9;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <div class="row">
+            <div class="card" style="flex:1; min-width: 320px;">
+                <div class="sub">Estimated speed (feel-first)</div>
+                <div class="big"><span id="speed">0.0</span> <span
+                        style="font-size:22px; font-weight:700; opacity:.85;">mph</span></div>
+                <div class="meter">
+                    <div class="fill" id="fill"></div>
+                </div>
+                <div class="row" style="margin-top:12px;">
+                    <button id="btnMotion">Enable Motion</button>
+                    <button id="btnGPS">Enable GPS</button>
+                    <button id="btnAudio">Enable Audio</button>
+                    <button id="btnZero">Zero / Reset drift</button>
+                </div>
+                <div class="mono" id="status" style="margin-top:10px;"></div>
+            </div>
+
+            <div class="card" style="width: 320px;">
+                <div class="sub">Sound (engine-ish)</div>
+                <label><span>Engine volume</span><span id="vVol">0.20</span></label>
+                <input id="vol" type="range" min="0" max="1" step="0.01" value="0.20" />
+                <label><span>Base pitch (Hz)</span><span id="vBase">90</span></label>
+                <input id="baseHz" type="range" min="40" max="220" step="1" value="90" />
+                <label><span>Pitch per mph</span><span id="vSlope">18</span></label>
+                <input id="slopeHz" type="range" min="2" max="60" step="1" value="18" />
+                <label><span>Pitch smoothing</span><span id="vPS">0.08</span></label>
+                <input id="pitchSmooth" type="range" min="0" max="0.3" step="0.005" value="0.08" />
+            </div>
+        </div>
+
+        <div class="grid" style="margin-top:12px;">
+            <div class="card">
+                <div class="sub">Fusion tuning (this is the important part)</div>
+                <label><span>Accel → speed gain</span><span id="vAG">1.00</span></label>
+                <input id="accelGain" type="range" min="0" max="3" step="0.01" value="1.00" />
+
+                <label><span>Accel deadzone (m/s²)</span><span id="vDZ">0.08</span></label>
+                <input id="deadzone" type="range" min="0" max="0.5" step="0.01" value="0.08" />
+
+                <label><span>Accel LPF (sec)</span><span id="vAL">0.10</span></label>
+                <input id="accelLPF" type="range" min="0" max="0.8" step="0.01" value="0.10" />
+
+                <label><span>PLL pull to GPS (0..1)</span><span id="vKp">0.08</span></label>
+                <input id="gpsPull" type="range" min="0" max="1" step="0.01" value="0.08" />
+
+                <label><span>GPS trust threshold (m)</span><span id="vAcc">18</span></label>
+                <input id="gpsAcc" type="range" min="5" max="80" step="1" value="18" />
+
+                <label><span>Speed display smoothing (sec)</span><span id="vSS">0.12</span></label>
+                <input id="speedLPF" type="range" min="0" max="1.2" step="0.01" value="0.12" />
+            </div>
+
+            <div class="card">
+                <div class="sub">Diagnostics</div>
+                <div class="mono" id="diag"></div>
+                <hr />
+                <div class="sub">Notes</div>
+                <div class="mono">
+                    This targets “feel”: quick response to real acceleration, with slow correction toward GPS.
+                    If you mount the phone consistently (same pocket/handlebar), tuning gets easier.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+(() => {
+	// ===== Utilities =====
+	const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+	const lerp = (a, b, t) => a + (b - a) * t;
+
+	// Exponential smoothing with time constant tau (seconds).
+	function expSmoother(prev, x, dt, tau){
+		if (tau <= 0) return x;
+		const alpha = 1 - Math.exp(-dt / tau);
+		return prev + alpha * (x - prev);
+	}
+
+	// ===== UI =====
+	const $ = (id) => document.getElementById(id);
+	const ui = {
+		speed: $("speed"), fill: $("fill"), status: $("status"), diag: $("diag"),
+		btnMotion: $("btnMotion"), btnGPS: $("btnGPS"), btnAudio: $("btnAudio"), btnZero: $("btnZero"),
+		vol: $("vol"), baseHz: $("baseHz"), slopeHz: $("slopeHz"), pitchSmooth: $("pitchSmooth"),
+		accelGain: $("accelGain"), deadzone: $("deadzone"), accelLPF: $("accelLPF"),
+		gpsPull: $("gpsPull"), gpsAcc: $("gpsAcc"), speedLPF: $("speedLPF"),
+
+		vVol: $("vVol"), vBase: $("vBase"), vSlope: $("vSlope"), vPS: $("vPS"),
+		vAG: $("vAG"), vDZ: $("vDZ"), vAL: $("vAL"), vKp: $("vKp"), vAcc: $("vAcc"), vSS: $("vSS"),
+	};
+
+	function bindReadout(rangeEl, readoutEl, fmt=(v)=>v){
+		const update = () => readoutEl.textContent = fmt(parseFloat(rangeEl.value));
+		rangeEl.addEventListener("input", update);
+		update();
+	}
+	bindReadout(ui.vol, ui.vVol, v=>v.toFixed(2));
+	bindReadout(ui.baseHz, ui.vBase, v=>Math.round(v));
+	bindReadout(ui.slopeHz, ui.vSlope, v=>Math.round(v));
+	bindReadout(ui.pitchSmooth, ui.vPS, v=>v.toFixed(3));
+	bindReadout(ui.accelGain, ui.vAG, v=>v.toFixed(2));
+	bindReadout(ui.deadzone, ui.vDZ, v=>v.toFixed(2));
+	bindReadout(ui.accelLPF, ui.vAL, v=>v.toFixed(2));
+	bindReadout(ui.gpsPull, ui.vKp, v=>v.toFixed(2));
+	bindReadout(ui.gpsAcc, ui.vAcc, v=>Math.round(v));
+	bindReadout(ui.speedLPF, ui.vSS, v=>v.toFixed(2));
+
+	// ===== Sensors state =====
+	let motionEnabled = false;
+	let gpsEnabled = false;
+
+	// We estimate "forward acceleration" by projecting acceleration (device frame) onto
+	// a "forward axis" derived from DeviceOrientation gamma/beta heuristics.
+	// This isn't perfect, but it often feels better than raw-axis guessing.
+	let ori = { alpha:0, beta:0, gamma:0, have:false };
+
+	// Accel (m/s^2), excluding gravity when available.
+	let acc = { x:0, y:0, z:0, have:false, t:0 };
+	let accLP = { x:0, y:0, z:0 };
+
+	// GPS
+	let gps = { speedMS:0, accM:999, have:false, t:0, heading:null };
+
+	// ===== Estimator state =====
+	let vFast = 0;          // m/s, fast integrated estimate (drifts)
+	let vDisplay = 0;       // m/s, smoothed for UI/audio
+	let forwardAxis = { x:0, y:0, z:-1 }; // approximate device "forward"
+	let lastNow = performance.now();
+
+	// ===== Audio =====
+	let audio = { ctx:null, osc:null, gain:null, enabled:false, pitchSm:0 };
+
+	function setStatus(){
+		const parts = [];
+		parts.push(`Motion: ${motionEnabled ? "ON" : "off"}`);
+		parts.push(`GPS: ${gpsEnabled ? "ON" : "off"}`);
+		parts.push(`Audio: ${audio.enabled ? "ON" : "off"}`);
+		if (gps.have) parts.push(`GPS acc: ${Math.round(gps.accM)}m`);
+		ui.status.textContent = parts.join("  |  ");
+	}
+
+	function setupAudio(){
+		if (audio.enabled) return;
+		const ctx = new (window.AudioContext || window.webkitAudioContext)();
+		const osc = ctx.createOscillator();
+		const gain = ctx.createGain();
+
+		// A slightly richer sound than a sine (still cheap)
+		osc.type = "sawtooth";
+		gain.gain.value = parseFloat(ui.vol.value);
+
+		osc.connect(gain).connect(ctx.destination);
+		osc.frequency.value = parseFloat(ui.baseHz.value);
+		osc.start();
+
+		audio.ctx = ctx; audio.osc = osc; audio.gain = gain;
+		audio.enabled = true;
+		audio.pitchSm = osc.frequency.value;
+	}
+
+	function updateAudio(dt){
+		if (!audio.enabled) return;
+		const vol = parseFloat(ui.vol.value);
+		const baseHz = parseFloat(ui.baseHz.value);
+		const slope = parseFloat(ui.slopeHz.value);
+		const tau = parseFloat(ui.pitchSmooth.value);
+
+		const mph = vDisplay * 2.2369362920544;
+		const targetHz = baseHz + slope * clamp(mph, 0, 60);
+
+		audio.pitchSm = expSmoother(audio.pitchSm, targetHz, dt, tau);
+		audio.osc.frequency.setValueAtTime(audio.pitchSm, audio.ctx.currentTime);
+		audio.gain.gain.setValueAtTime(vol, audio.ctx.currentTime);
+	}
+
+	// ===== Orientation helpers =====
+	function deg2rad(d){ return d * Math.PI / 180; }
+
+	// Rough "forward axis" in device coordinates:
+	// If phone is in pocket upright, gamma/beta changes with tilt.
+	// This is a heuristic that often gives better feel than picking X or Y blindly.
+	function computeForwardAxis(){
+		if (!ori.have) return { x:0, y:0, z:-1 };
+		const b = deg2rad(ori.beta);  // front-back tilt
+		const g = deg2rad(ori.gamma); // left-right tilt
+
+		// Build an axis that points "forward" as "down the screen" rotated by tilt.
+		// Device axes: x right, y up, z out of screen (varies by browser, but consistent enough for feel).
+		// We'll treat forward as -y by default, then rotate by beta/gamma.
+		let fx = 0;
+		let fy = -1;
+		let fz = 0;
+
+		// Apply rotations (very simplified)
+		// Rotate around x by beta, around y by gamma
+		// (Not a full 3D orientation matrix — this is intentionally cheap/heuristic.)
+		const cb = Math.cos(b), sb = Math.sin(b);
+		const cg = Math.cos(g), sg = Math.sin(g);
+
+		// rotate forward vector by beta around x
+		let ry = fy * cb - fz * sb;
+		let rz = fy * sb + fz * cb;
+		let rx = fx;
+
+		// rotate around y by gamma
+		let rx2 = rx * cg + rz * sg;
+		let rz2 = -rx * sg + rz * cg;
+		let ry2 = ry;
+
+		// normalize
+		const n = Math.hypot(rx2, ry2, rz2) || 1;
+		return { x: rx2/n, y: ry2/n, z: rz2/n };
+	}
+
+	// Project accel onto forward axis
+	function forwardAccel(ax, ay, az, f){
+		return ax*f.x + ay*f.y + az*f.z;
+	}
+
+	// ===== Main loop =====
+	function tick(){
+		const now = performance.now();
+		let dt = (now - lastNow) / 1000;
+		lastNow = now;
+		dt = clamp(dt, 0, 0.05); // avoid huge jumps
+
+		// Update forward axis slowly (prevents jitter)
+		const fNew = computeForwardAxis();
+		forwardAxis.x = lerp(forwardAxis.x, fNew.x, 0.12);
+		forwardAxis.y = lerp(forwardAxis.y, fNew.y, 0.12);
+		forwardAxis.z = lerp(forwardAxis.z, fNew.z, 0.12);
+
+		// Low-pass accel
+		const tauA = parseFloat(ui.accelLPF.value);
+		accLP.x = expSmoother(accLP.x, acc.x, dt, tauA);
+		accLP.y = expSmoother(accLP.y, acc.y, dt, tauA);
+		accLP.z = expSmoother(accLP.z, acc.z, dt, tauA);
+
+		// Forward accel
+		let aF = forwardAccel(accLP.x, accLP.y, accLP.z, forwardAxis);
+
+		// Deadzone + gain (this is where "feel" comes from)
+		const dz = parseFloat(ui.deadzone.value);
+		if (Math.abs(aF) < dz) aF = 0;
+		const gain = parseFloat(ui.accelGain.value);
+		aF *= gain;
+
+		// Integrate to fast speed estimate
+		vFast += aF * dt;
+		vFast = Math.max(0, vFast);
+
+		// PLL-ish pull toward GPS when GPS is confident
+		// - If GPS accuracy is good, increase pull.
+		// - If GPS is bad, almost ignore it.
+		const pullBase = parseFloat(ui.gpsPull.value);
+		const accThresh = parseFloat(ui.gpsAcc.value);
+
+		let trust = 0;
+		if (gps.have){
+			// accuracy weight: 1 when acc <= threshold, smoothly down to 0 by ~3x threshold
+			const x = gps.accM / Math.max(1, accThresh);
+			trust = clamp(1 - (x - 1) / 2, 0, 1);
+		}
+
+		const pull = pullBase * trust;
+
+		if (gps.have && gps.speedMS >= 0){
+			// Correction term: slowly nudge vFast toward GPS speed
+			const err = gps.speedMS - vFast;
+			vFast += err * pull * dt * 6.0; // the 6.0 is "loop bandwidth" feel — keep it here for now
+		}
+
+		// UI/display smoothing
+		const tauS = parseFloat(ui.speedLPF.value);
+		vDisplay = expSmoother(vDisplay, vFast, dt, tauS);
+
+		// Render
+		const mph = vDisplay * 2.2369362920544;
+		ui.speed.textContent = mph.toFixed(1);
+		ui.fill.style.width = `${clamp(mph/35, 0, 1) * 100}%`;
+
+		// Audio
+		updateAudio(dt);
+
+		// Diagnostics
+		const gpsMph = gps.have ? (gps.speedMS * 2.2369362920544) : null;
+		ui.diag.innerHTML =
+			`aF: ${aF.toFixed(2)} m/s²<br>` +
+			`vFast: ${(vFast*2.2369362920544).toFixed(1)} mph<br>` +
+			`GPS: ${gpsMph===null ? "—" : gpsMph.toFixed(1)+" mph"} (acc ~${Math.round(gps.accM)}m)<br>` +
+			`trust: ${trust.toFixed(2)}<br>` +
+			`forwardAxis: [${forwardAxis.x.toFixed(2)}, ${forwardAxis.y.toFixed(2)}, ${forwardAxis.z.toFixed(2)}]`;
+
+		requestAnimationFrame(tick);
+	}
+
+	// ===== Event wiring =====
+	ui.btnZero.addEventListener("click", () => {
+		vFast = 0;
+		vDisplay = 0;
+	});
+
+	ui.btnAudio.addEventListener("click", async () => {
+		try{
+			setupAudio();
+			await audio.ctx.resume();
+			setStatus();
+		}catch(e){
+			alert("Audio failed to start: " + e.message);
+		}
+	});
+
+	ui.btnMotion.addEventListener("click", async () => {
+		try{
+			// iOS permission gate
+			if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function"){
+				const res = await DeviceMotionEvent.requestPermission();
+				if (res !== "granted") throw new Error("DeviceMotion permission denied");
+			}
+			if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function"){
+				// Some iOS versions gate orientation separately
+				try{
+					const res2 = await DeviceOrientationEvent.requestPermission();
+					if (res2 !== "granted") console.warn("DeviceOrientation permission denied");
+				}catch(_){}
+			}
+
+			window.addEventListener("deviceorientation", (e) => {
+				if (e.beta == null || e.gamma == null) return;
+				ori.alpha = e.alpha || 0;
+				ori.beta  = e.beta  || 0;
+				ori.gamma = e.gamma || 0;
+				ori.have = true;
+			}, true);
+
+			window.addEventListener("devicemotion", (e) => {
+				const a = e.acceleration; // excludes gravity when available
+				const ag = e.accelerationIncludingGravity;
+
+				// Prefer 'acceleration' when present; fallback to includingGravity.
+				let ax=0, ay=0, az=0;
+				if (a && (a.x != null)){
+					ax = a.x; ay = a.y; az = a.z;
+				}else if (ag && (ag.x != null)){
+					ax = ag.x; ay = ag.y; az = ag.z;
+				}
+				acc.x = ax || 0;
+				acc.y = ay || 0;
+				acc.z = az || 0;
+				acc.have = true;
+				acc.t = performance.now();
+			}, true);
+
+			motionEnabled = true;
+			setStatus();
+		}catch(e){
+			alert("Motion failed: " + e.message);
+		}
+	});
+
+	let gpsWatchId = null;
+	ui.btnGPS.addEventListener("click", async () => {
+		try{
+			if (!navigator.geolocation) throw new Error("Geolocation not available");
+			if (gpsWatchId != null) return;
+
+			gpsWatchId = navigator.geolocation.watchPosition(
+				(pos) => {
+					const c = pos.coords;
+					// speed is m/s, may be null on some devices
+					if (c.speed != null && !Number.isNaN(c.speed)){
+						gps.speedMS = Math.max(0, c.speed);
+					}
+					gps.accM = c.accuracy != null ? c.accuracy : 999;
+					gps.have = true;
+					gps.t = performance.now();
+					gps.heading = c.heading;
+					gpsEnabled = true;
+					setStatus();
+				},
+				(err) => {
+					console.warn(err);
+					alert("GPS error: " + err.message);
+				},
+				{
+					enableHighAccuracy: true,
+					timeout: 8000,
+					maximumAge: 0
+				}
+			);
+		}catch(e){
+			alert("GPS failed: " + e.message);
+		}
+	});
+
+	// Kick off
+	setStatus();
+	requestAnimationFrame(() => { lastNow = performance.now(); tick(); });
+})();
+    </script>
+</body>
+
+</html>
