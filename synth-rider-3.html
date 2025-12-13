@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PEV Speed Feel Meter (Lush Synth)</title>
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            background: #0b0f14;
+            color: #e8eef7;
+        }
+
+        .wrap {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 18px;
+        }
+
+        .row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: flex-start;
+        }
+
+        .card {
+            background: #111926;
+            border: 1px solid #1f2a3a;
+            border-radius: 14px;
+            padding: 14px;
+        }
+
+        .big {
+            font-size: 54px;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+        }
+
+        .sub {
+            opacity: .8;
+        }
+
+        .meter {
+            height: 16px;
+            background: #0c121c;
+            border: 1px solid #20314a;
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #2ee59d, #2e7de5, #e52e86);
+        }
+
+        button {
+            background: #1c2b40;
+            color: #e8eef7;
+            border: 1px solid #2a3f5f;
+            padding: 10px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        label {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            margin: 10px 0 6px;
+            font-size: 14px;
+            opacity: .95;
+        }
+
+        input[type="range"] {
+            width: 100%;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        @media (max-width: 860px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .big {
+                font-size: 46px;
+            }
+        }
+
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            font-size: 12px;
+            opacity: .9;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <div class="row">
+            <div class="card" style="flex:1; min-width: 320px;">
+                <div class="sub">Estimated speed (feel-first)</div>
+                <div class="big"><span id="speed">0.0</span> <span
+                        style="font-size:22px; font-weight:700; opacity:.85;">mph</span></div>
+                <div class="meter">
+                    <div class="fill" id="fill"></div>
+                </div>
+                <div class="row" style="margin-top:12px;">
+                    <button id="btnMotion">Enable Motion</button>
+                    <button id="btnGPS">Enable GPS</button>
+                    <button id="btnAudio">Enable Audio</button>
+                    <button id="btnZero">Zero / Reset drift</button>
+                </div>
+                <div class="mono" id="status" style="margin-top:10px;"></div>
+            </div>
+
+            <div class="card" style="width: 360px;">
+                <div class="sub">Cinematic Synth Controls</div>
+
+                <label><span>Master volume</span><span id="vVol">0.18</span></label>
+                <input id="vol" type="range" min="0" max="1" step="0.01" value="0.18" />
+
+                <label><span>Lushness (voices)</span><span id="vLush">0.70</span></label>
+                <input id="lush" type="range" min="0" max="1" step="0.01" value="0.70" />
+
+                <label><span>Gliss intensity</span><span id="vG">0.55</span></label>
+                <input id="gliss" type="range" min="0" max="1" step="0.01" value="0.55" />
+
+                <label><span>Reverb</span><span id="vRev">0.55</span></label>
+                <input id="reverb" type="range" min="0" max="1" step="0.01" value="0.55" />
+
+                <label><span>Halo delay</span><span id="vDel">0.35</span></label>
+                <input id="delay" type="range" min="0" max="1" step="0.01" value="0.35" />
+
+                <label><span>Harmony evolve rate</span><span id="vEvo">0.18</span></label>
+                <input id="evolve" type="range" min="0" max="1" step="0.01" value="0.18" />
+            </div>
+        </div>
+
+        <div class="grid" style="margin-top:12px;">
+            <div class="card">
+                <div class="sub">Fusion tuning (responsiveness)</div>
+                <label><span>Accel → speed gain</span><span id="vAG">1.00</span></label>
+                <input id="accelGain" type="range" min="0" max="3" step="0.01" value="1.00" />
+
+                <label><span>Accel deadzone (m/s²)</span><span id="vDZ">0.08</span></label>
+                <input id="deadzone" type="range" min="0" max="0.5" step="0.01" value="0.08" />
+
+                <label><span>Accel LPF (sec)</span><span id="vAL">0.10</span></label>
+                <input id="accelLPF" type="range" min="0" max="0.8" step="0.01" value="0.10" />
+
+                <label><span>PLL pull to GPS (0..1)</span><span id="vKp">0.08</span></label>
+                <input id="gpsPull" type="range" min="0" max="1" step="0.01" value="0.08" />
+
+                <label><span>GPS trust threshold (m)</span><span id="vAcc">18</span></label>
+                <input id="gpsAcc" type="range" min="5" max="80" step="1" value="18" />
+
+                <label><span>Speed display smoothing (sec)</span><span id="vSS">0.12</span></label>
+                <input id="speedLPF" type="range" min="0" max="1.2" step="0.01" value="0.12" />
+            </div>
+
+            <div class="card">
+                <div class="sub">Diagnostics</div>
+                <div class="mono" id="diag"></div>
+                <hr />
+                <div class="sub">Tip</div>
+                <div class="mono">
+                    If the phone is in a pocket, “forward accel” is a heuristic. Handlebar mount will feel cleaner.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+(() => {
+	// ===== Utilities =====
+	const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+	const lerp = (a, b, t) => a + (b - a) * t;
+
+	function expSmoother(prev, x, dt, tau){
+		if (tau <= 0) return x;
+		const alpha = 1 - Math.exp(-dt / tau);
+		return prev + alpha * (x - prev);
+	}
+
+	function bindReadout(rangeEl, readoutEl, fmt=(v)=>v){
+		const update = () => readoutEl.textContent = fmt(parseFloat(rangeEl.value));
+		rangeEl.addEventListener("input", update);
+		update();
+	}
+
+	const $ = (id) => document.getElementById(id);
+	const ui = {
+		speed: $("speed"), fill: $("fill"), status: $("status"), diag: $("diag"),
+		btnMotion: $("btnMotion"), btnGPS: $("btnGPS"), btnAudio: $("btnAudio"), btnZero: $("btnZero"),
+		vol: $("vol"), lush: $("lush"), gliss: $("gliss"), reverb: $("reverb"), delay: $("delay"), evolve: $("evolve"),
+		accelGain: $("accelGain"), deadzone: $("deadzone"), accelLPF: $("accelLPF"), gpsPull: $("gpsPull"), gpsAcc: $("gpsAcc"), speedLPF: $("speedLPF"),
+
+		vVol: $("vVol"), vLush: $("vLush"), vG: $("vG"), vRev: $("vRev"), vDel: $("vDel"), vEvo: $("vEvo"),
+		vAG: $("vAG"), vDZ: $("vDZ"), vAL: $("vAL"), vKp: $("vKp"), vAcc: $("vAcc"), vSS: $("vSS"),
+	};
+
+	bindReadout(ui.vol, ui.vVol, v=>v.toFixed(2));
+	bindReadout(ui.lush, ui.vLush, v=>v.toFixed(2));
+	bindReadout(ui.gliss, ui.vG, v=>v.toFixed(2));
+	bindReadout(ui.reverb, ui.vRev, v=>v.toFixed(2));
+	bindReadout(ui.delay, ui.vDel, v=>v.toFixed(2));
+	bindReadout(ui.evolve, ui.vEvo, v=>v.toFixed(2));
+
+	bindReadout(ui.accelGain, ui.vAG, v=>v.toFixed(2));
+	bindReadout(ui.deadzone, ui.vDZ, v=>v.toFixed(2));
+	bindReadout(ui.accelLPF, ui.vAL, v=>v.toFixed(2));
+	bindReadout(ui.gpsPull, ui.vKp, v=>v.toFixed(2));
+	bindReadout(ui.gpsAcc, ui.vAcc, v=>Math.round(v));
+	bindReadout(ui.speedLPF, ui.vSS, v=>v.toFixed(2));
+
+	// ===== Sensors state =====
+	let motionEnabled = false;
+	let gpsEnabled = false;
+
+	let ori = { alpha:0, beta:0, gamma:0, have:false };
+	let acc = { x:0, y:0, z:0, have:false, t:0 };
+	let accLP = { x:0, y:0, z:0 };
+	let gps = { speedMS:0, accM:999, have:false, t:0, heading:null };
+
+	// ===== Estimator state =====
+	let vFast = 0;          // m/s
+	let vDisplay = 0;       // m/s
+	let forwardAxis = { x:0, y:0, z:-1 };
+	let lastNow = performance.now();
+
+	function deg2rad(d){ return d * Math.PI / 180; }
+
+	function computeForwardAxis(){
+		if (!ori.have) return { x:0, y:0, z:-1 };
+		const b = deg2rad(ori.beta);
+		const g = deg2rad(ori.gamma);
+
+		let fx = 0, fy = -1, fz = 0;
+
+		const cb = Math.cos(b), sb = Math.sin(b);
+		const cg = Math.cos(g), sg = Math.sin(g);
+
+		let ry = fy * cb - fz * sb;
+		let rz = fy * sb + fz * cb;
+		let rx = fx;
+
+		let rx2 = rx * cg + rz * sg;
+		let rz2 = -rx * sg + rz * cg;
+		let ry2 = ry;
+
+		const n = Math.hypot(rx2, ry2, rz2) || 1;
+		return { x: rx2/n, y: ry2/n, z: rz2/n };
+	}
+
+	function forwardAccel(ax, ay, az, f){
+		return ax*f.x + ay*f.y + az*f.z;
+	}
+
+	function setStatus(){
+		const parts = [];
+		parts.push(`Motion: ${motionEnabled ? "ON" : "off"}`);
+		parts.push(`GPS: ${gpsEnabled ? "ON" : "off"}`);
+		parts.push(`Audio: ${audio.enabled ? "ON" : "off"}`);
+		if (gps.have) parts.push(`GPS acc: ${Math.round(gps.accM)}m`);
+		ui.status.textContent = parts.join("  |  ");
+	}
+
+	// ===== Audio: lush cinematic synth =====
+	const audio = {
+		ctx: null,
+		enabled: false,
+
+		// Nodes
+		master: null,
+		bus: null,
+		revSend: null,
+		delSend: null,
+		reverb: null,
+		delay: null,
+
+		// Layers
+		engine: null,
+		pad: null,
+		gliss: null,
+
+		// Smoothed params
+		mphSm: 0,
+		aSm: 0,
+
+		// Harmony
+		rootMidi: 45, // A2-ish
+		modeIndex: 0,
+		nextHarmonyAt: 0,
+	};
+
+	const MODES = [
+		{ name:"Ionian",      steps:[0,2,4,5,7,9,11] },
+		{ name:"Dorian",      steps:[0,2,3,5,7,9,10] },
+		{ name:"Phrygian",    steps:[0,1,3,5,7,8,10] },
+		{ name:"Lydian",      steps:[0,2,4,6,7,9,11] },
+		{ name:"Mixolydian",  steps:[0,2,4,5,7,9,10] },
+		{ name:"Aeolian",     steps:[0,2,3,5,7,8,10] },
+	];
+
+	function midiToHz(m){ return 440 * Math.pow(2, (m - 69) / 12); }
+
+	function makeSoftClipper(ctx){
+		const ws = ctx.createWaveShaper();
+		const curve = new Float32Array(2048);
+		for (let i=0;i<curve.length;i++){
+			const x = (i/(curve.length-1))*2 - 1;
+			// gentle saturation
+			curve[i] = Math.tanh(2.2 * x);
+		}
+		ws.curve = curve;
+		ws.oversample = "4x";
+		return ws;
+	}
+
+	function makeSimpleReverbIR(ctx, seconds=2.6, decay=2.4){
+		const rate = ctx.sampleRate;
+		const len = Math.floor(rate * seconds);
+		const ir = ctx.createBuffer(2, len, rate);
+		for (let ch=0; ch<2; ch++){
+			const data = ir.getChannelData(ch);
+			for (let i=0; i<len; i++){
+				const t = i / len;
+				// noise * exponential decay
+				data[i] = (Math.random()*2 - 1) * Math.pow(1 - t, decay);
+			}
+		}
+		return ir;
+	}
+
+	function createSupersawLayer(ctx, voiceCount){
+		const input = ctx.createGain();
+		const out = ctx.createGain();
+
+		const filter = ctx.createBiquadFilter();
+		filter.type = "lowpass";
+		filter.frequency.value = 280;
+		filter.Q.value = 0.8;
+
+		const sat = makeSoftClipper(ctx);
+
+		input.connect(filter);
+		filter.connect(sat);
+		sat.connect(out);
+
+		const voices = [];
+		for (let i=0; i<voiceCount; i++){
+			const o = ctx.createOscillator();
+			const g = ctx.createGain();
+			o.type = "sawtooth";
+			g.gain.value = 1 / voiceCount;
+
+			// detune spread (cents)
+			const spread = 22 + 35 * (i/(voiceCount-1 || 1));
+			const sign = (i % 2 === 0) ? 1 : -1;
+			o.detune.value = sign * spread;
+
+			o.connect(g).connect(input);
+			o.start();
+
+			voices.push({ o, g });
+		}
+
+		return { in: input, out, filter, voices };
+	}
+
+	function createPadLayer(ctx, voiceCount){
+		const out = ctx.createGain();
+		const sum = ctx.createGain();
+		sum.connect(out);
+
+		const filter = ctx.createBiquadFilter();
+		filter.type = "lowpass";
+		filter.frequency.value = 520;
+		filter.Q.value = 0.9;
+
+		const chorusDelay = ctx.createDelay(0.05);
+		chorusDelay.delayTime.value = 0.018;
+
+		const chorusLFO = ctx.createOscillator();
+		chorusLFO.type = "sine";
+		chorusLFO.frequency.value = 0.18;
+
+		const chorusDepth = ctx.createGain();
+		chorusDepth.gain.value = 0.006;
+		chorusLFO.connect(chorusDepth).connect(chorusDelay.delayTime);
+		chorusLFO.start();
+
+		const wet = ctx.createGain(); wet.gain.value = 0.45;
+		const dry = ctx.createGain(); dry.gain.value = 0.75;
+
+		sum.connect(filter);
+		filter.connect(dry).connect(out);
+		filter.connect(chorusDelay).connect(wet).connect(out);
+
+		const voices = [];
+		for (let i=0;i<voiceCount;i++){
+			const o = ctx.createOscillator();
+			const g = ctx.createGain();
+			// “softer” core
+			o.type = (i % 3 === 0) ? "triangle" : "sine";
+			g.gain.value = 0.9 / voiceCount;
+
+			const det = (i - (voiceCount-1)/2) * 9; // cents
+			o.detune.value = det;
+
+			o.connect(g).connect(sum);
+			o.start();
+			voices.push({ o, g });
+		}
+
+		// very slow filter drift
+		const fLFO = ctx.createOscillator();
+		fLFO.type = "sine";
+		fLFO.frequency.value = 0.05;
+		const fDepth = ctx.createGain();
+		fDepth.gain.value = 260;
+		fLFO.connect(fDepth).connect(filter.frequency);
+		fLFO.start();
+
+		return { out, filter, voices, wet, dry, chorusDelay };
+	}
+
+	function createGlissLayer(ctx){
+		const out = ctx.createGain();
+
+		const filter = ctx.createBiquadFilter();
+		filter.type = "bandpass";
+		filter.frequency.value = 900;
+		filter.Q.value = 6;
+
+		const g = ctx.createGain();
+		g.gain.value = 0.0;
+
+		const o = ctx.createOscillator();
+		o.type = "sawtooth";
+
+		const shimmer = ctx.createBiquadFilter();
+		shimmer.type = "highpass";
+		shimmer.frequency.value = 650;
+
+		o.connect(filter).connect(shimmer).connect(g).connect(out);
+		o.start();
+
+		return { out, o, g, filter, shimmer, hzSm: 220 };
+	}
+
+	function setupAudio(){
+		if (audio.enabled) return;
+
+		const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+		// Master / bus
+		const master = ctx.createGain();
+		master.gain.value = parseFloat(ui.vol.value);
+
+		const bus = ctx.createGain();
+
+		// Delay “halo”
+		const delay = ctx.createDelay(1.2);
+		delay.delayTime.value = 0.34;
+		const delayFB = ctx.createGain(); delayFB.gain.value = 0.35;
+		const delayLP = ctx.createBiquadFilter(); delayLP.type = "lowpass"; delayLP.frequency.value = 2600;
+		delay.connect(delayLP).connect(delayFB).connect(delay);
+
+		const delSend = ctx.createGain(); delSend.gain.value = 0.0;
+		const delReturn = ctx.createGain(); delReturn.gain.value = 0.35;
+
+		// Reverb
+		const convolver = ctx.createConvolver();
+		convolver.buffer = makeSimpleReverbIR(ctx, 3.0, 2.2);
+		const revSend = ctx.createGain(); revSend.gain.value = 0.0;
+		const revReturn = ctx.createGain(); revReturn.gain.value = 0.55;
+
+		// Routing
+		bus.connect(master).connect(ctx.destination);
+
+		bus.connect(delSend).connect(delay).connect(delReturn).connect(bus);
+		bus.connect(revSend).connect(convolver).connect(revReturn).connect(bus);
+
+		// Layers
+		const lush = parseFloat(ui.lush.value);
+		const engineVoices = 3 + Math.round(lush * 7); // 3..10
+		const padVoices = 2 + Math.round(lush * 6);    // 2..8
+
+		const engine = createSupersawLayer(ctx, engineVoices);
+		const pad = createPadLayer(ctx, padVoices);
+		const gliss = createGlissLayer(ctx);
+
+		const engineGain = ctx.createGain(); engineGain.gain.value = 0.0;
+		const padGain = ctx.createGain(); padGain.gain.value = 0.0;
+		const glissGain = ctx.createGain(); glissGain.gain.value = 0.0;
+
+		engine.out.connect(engineGain).connect(bus);
+		pad.out.connect(padGain).connect(bus);
+		gliss.out.connect(glissGain).connect(bus);
+
+		audio.ctx = ctx;
+		audio.master = master;
+		audio.bus = bus;
+		audio.revSend = revSend;
+		audio.delSend = delSend;
+		audio.reverb = convolver;
+		audio.delay = delay;
+		audio.engine = { ...engine, gain: engineGain, baseHz: 60 };
+		audio.pad = { ...pad, gain: padGain, baseMidi: 45 };
+		audio.gliss = { ...gliss, gain: glissGain };
+		audio.enabled = true;
+
+		audio.mphSm = 0;
+		audio.aSm = 0;
+
+		audio.rootMidi = 45;
+		audio.modeIndex = 0;
+		audio.nextHarmonyAt = ctx.currentTime + 2.0;
+	}
+
+	// Scale quantize: choose nearest scale degree in current mode
+	function quantizeToMode(midi, rootMidi, modeSteps){
+		// bring into octave relative to root
+		const rel = midi - rootMidi;
+		const oct = Math.floor(rel / 12);
+		const within = rel - oct*12;
+
+		let best = modeSteps[0];
+		let bestDist = 999;
+		for (const s of modeSteps){
+			const d = Math.abs(within - s);
+			if (d < bestDist){
+				bestDist = d;
+				best = s;
+			}
+		}
+		return rootMidi + oct*12 + best;
+	}
+
+	function updateHarmony(now){
+		const evo = parseFloat(ui.evolve.value); // 0..1
+		// If evo is 0, very slow changes.
+		const minPeriod = 10;   // seconds
+		const maxPeriod = 65;
+		const period = lerp(maxPeriod, minPeriod, evo);
+
+		if (now < audio.nextHarmonyAt) return;
+
+		// Move mode + root slowly
+		audio.modeIndex = (audio.modeIndex + 1) % MODES.length;
+
+		// Root movement: step by small intervals that feel cinematic (fourth, fifth, whole step, minor third)
+		const choices = [2, 5, 7, 3, -2, -5];
+		const step = choices[Math.floor(Math.random()*choices.length)];
+		audio.rootMidi = clamp(audio.rootMidi + step, 36, 60); // keep it in a useful low register
+
+		audio.nextHarmonyAt = now + period;
+	}
+
+	function updateAudio(dt, mph, aF){
+		if (!audio.enabled) return;
+
+		const ctx = audio.ctx;
+		const now = ctx.currentTime;
+
+		// Smooth speed + accel for audio control
+		audio.mphSm = expSmoother(audio.mphSm, mph, dt, 0.06);
+		audio.aSm = expSmoother(audio.aSm, aF, dt, 0.08);
+
+		const vol = parseFloat(ui.vol.value);
+		audio.master.gain.setValueAtTime(vol, now);
+
+		// Sends
+		const rev = parseFloat(ui.reverb.value);
+		const del = parseFloat(ui.delay.value);
+		audio.revSend.gain.setValueAtTime(rev * 0.8, now);
+		audio.delSend.gain.setValueAtTime(del * 0.7, now);
+
+		// Lushness can change live: we’ll just scale layer mix (not recreate voices)
+		const lush = parseFloat(ui.lush.value);
+		const glissAmt = parseFloat(ui.gliss.value);
+
+		// Layer mix: keep engine present, pad fills, gliss blooms with speed/accel
+		const speed01 = clamp(audio.mphSm / 35, 0, 1);
+		const accelBoost = clamp(Math.abs(audio.aSm) / 2.2, 0, 1);
+
+		const engineMix = lerp(0.18, 0.55, speed01) * lerp(0.7, 1.0, lush);
+		const padMix    = lerp(0.12, 0.42, speed01) * lerp(0.6, 1.0, lush);
+		const glissMix  = (0.08 + 0.55 * accelBoost) * glissAmt;
+
+		audio.engine.gain.gain.setTargetAtTime(engineMix, now, 0.04);
+		audio.pad.gain.gain.setTargetAtTime(padMix, now, 0.20);
+		audio.gliss.gain.gain.setTargetAtTime(glissMix, now, 0.08);
+
+		// Harmony evolve
+		updateHarmony(now);
+		const mode = MODES[audio.modeIndex].steps;
+
+		// --- Engine bed: base pitch tracks speed with slight “gear” steps ---
+		// Base is a low root-ish tone + speed contribution
+		const engineBaseMidi = audio.rootMidi - 12 + speed01*12; // rises an octave across range
+		const engineHz = midiToHz(engineBaseMidi);
+
+		// Filter opens with speed, adds growl
+		const f = lerp(220, 1400, Math.pow(speed01, 1.2));
+		audio.engine.filter.frequency.setTargetAtTime(f, now, 0.06);
+
+		for (const v of audio.engine.voices){
+			v.o.frequency.setTargetAtTime(engineHz, now, 0.03);
+		}
+
+		// --- Pad: slow chord-ish cluster around root and fifth ---
+		// Two “centers” in scale, slightly moving
+		const padCenterA = quantizeToMode(audio.rootMidi + 0, audio.rootMidi, mode);
+		const padCenterB = quantizeToMode(audio.rootMidi + 7, audio.rootMidi, mode);
+
+		// A little “breathing” motion linked to speed
+		const padLift = (speed01 - 0.3) * 3; // semitones-ish
+		const padAHz = midiToHz(padCenterA + padLift);
+		const padBHz = midiToHz(padCenterB + padLift);
+
+		for (let i=0;i<audio.pad.voices.length;i++){
+			const v = audio.pad.voices[i];
+			const t = i/(audio.pad.voices.length-1 || 1);
+			// Spread between A and B, plus octave for air
+			const base = lerp(padAHz, padBHz, t);
+			const octave = (i % 4 === 0) ? 2 : (i % 3 === 0 ? 1 : 0);
+			v.o.frequency.setTargetAtTime(base * Math.pow(2, octave), now, 0.35);
+		}
+
+		// Pad filter opens slightly with speed + evolves slider
+		const evo = parseFloat(ui.evolve.value);
+		audio.pad.filter.frequency.setTargetAtTime(lerp(420, 1800, clamp(speed01*0.8 + evo*0.35, 0, 1)), now, 0.50);
+
+		// --- Gliss/Lead: continuous glide through scale degrees ---
+		// Target note selection: speed picks octave band, accel picks degree motion
+		const glideRate = lerp(0.25, 0.06, clamp(glissAmt, 0, 1)); // seconds (smaller is faster)
+		const degreeCount = mode.length;
+
+		// Evolving “cursor” that creeps with time and speed (gliss feeling)
+		if (!audio.gliss._phase) audio.gliss._phase = 0;
+		audio.gliss._phase += dt * (0.35 + speed01*0.95 + accelBoost*1.1) * lerp(0.4, 1.2, glissAmt);
+
+		const degIdx = Math.floor(audio.gliss._phase) % degreeCount;
+		const nextDeg = (degIdx + 1) % degreeCount;
+
+		const octaveBase = 60 + Math.floor(speed01 * 12); // around C4..C5+
+		const tBlend = audio.gliss._phase - Math.floor(audio.gliss._phase);
+
+		const m0 = audio.rootMidi + 12 + mode[degIdx] + (octaveBase - 60);
+		const m1 = audio.rootMidi + 12 + mode[nextDeg] + (octaveBase - 60);
+
+		// Micro “shimmer” detune with accel
+		const micro = (Math.sin(now*2.2) * 0.12 + Math.sin(now*0.7) * 0.08) * (0.5 + accelBoost) * glissAmt;
+
+		// Glide between the two quantized targets = gliss
+		const targetMidi = lerp(m0, m1, tBlend) + micro;
+		const targetHz = midiToHz(targetMidi);
+
+		audio.gliss.hzSm = expSmoother(audio.gliss.hzSm, targetHz, dt, glideRate);
+		audio.gliss.o.frequency.setTargetAtTime(audio.gliss.hzSm, now, 0.02);
+
+		// Gliss timbre motion
+		audio.gliss.filter.frequency.setTargetAtTime(lerp(700, 1700, speed01) + 800*accelBoost, now, 0.10);
+		audio.gliss.g.gain.setTargetAtTime(lerp(0.05, 0.22, glissMix), now, 0.08);
+	}
+
+	// ===== Main loop =====
+	function tick(){
+		const nowPerf = performance.now();
+		let dt = (nowPerf - lastNow) / 1000;
+		lastNow = nowPerf;
+		dt = clamp(dt, 0, 0.05);
+
+		// Forward axis
+		const fNew = computeForwardAxis();
+		forwardAxis.x = lerp(forwardAxis.x, fNew.x, 0.12);
+		forwardAxis.y = lerp(forwardAxis.y, fNew.y, 0.12);
+		forwardAxis.z = lerp(forwardAxis.z, fNew.z, 0.12);
+
+		// Low-pass accel
+		const tauA = parseFloat(ui.accelLPF.value);
+		accLP.x = expSmoother(accLP.x, acc.x, dt, tauA);
+		accLP.y = expSmoother(accLP.y, acc.y, dt, tauA);
+		accLP.z = expSmoother(accLP.z, acc.z, dt, tauA);
+
+		let aF = forwardAccel(accLP.x, accLP.y, accLP.z, forwardAxis);
+
+		// Deadzone + gain
+		const dz = parseFloat(ui.deadzone.value);
+		if (Math.abs(aF) < dz) aF = 0;
+		const gain = parseFloat(ui.accelGain.value);
+		aF *= gain;
+
+		// Integrate fast speed estimate
+		vFast += aF * dt;
+		vFast = Math.max(0, vFast);
+
+		// PLL-ish pull toward GPS when confident
+		const pullBase = parseFloat(ui.gpsPull.value);
+		const accThresh = parseFloat(ui.gpsAcc.value);
+
+		let trust = 0;
+		if (gps.have){
+			const x = gps.accM / Math.max(1, accThresh);
+			trust = clamp(1 - (x - 1) / 2, 0, 1);
+		}
+		const pull = pullBase * trust;
+
+		if (gps.have && gps.speedMS >= 0){
+			const err = gps.speedMS - vFast;
+			vFast += err * pull * dt * 6.0;
+		}
+
+		// Display smoothing
+		const tauS = parseFloat(ui.speedLPF.value);
+		vDisplay = expSmoother(vDisplay, vFast, dt, tauS);
+
+		const mph = vDisplay * 2.2369362920544;
+		ui.speed.textContent = mph.toFixed(1);
+		ui.fill.style.width = `${clamp(mph/35, 0, 1) * 100}%`;
+
+		// Audio update
+		updateAudio(dt, mph, aF);
+
+		// Diagnostics
+		const gpsMph = gps.have ? (gps.speedMS * 2.2369362920544) : null;
+		ui.diag.innerHTML =
+			`aF: ${aF.toFixed(2)} m/s²<br>` +
+			`vFast: ${(vFast*2.2369362920544).toFixed(1)} mph<br>` +
+			`GPS: ${gpsMph===null ? "—" : gpsMph.toFixed(1)+" mph"} (acc ~${Math.round(gps.accM)}m)<br>` +
+			`trust: ${trust.toFixed(2)}<br>` +
+			`mode: ${audio.enabled ? MODES[audio.modeIndex].name : "—"}<br>` +
+			`rootMidi: ${audio.enabled ? audio.rootMidi : "—"}<br>` +
+			`forwardAxis: [${forwardAxis.x.toFixed(2)}, ${forwardAxis.y.toFixed(2)}, ${forwardAxis.z.toFixed(2)}]`;
+
+		requestAnimationFrame(tick);
+	}
+
+	// ===== Wiring =====
+	ui.btnZero.addEventListener("click", () => { vFast = 0; vDisplay = 0; });
+
+	ui.btnAudio.addEventListener("click", async () => {
+		try{
+			setupAudio();
+			await audio.ctx.resume();
+			setStatus();
+		}catch(e){
+			alert("Audio failed to start: " + e.message);
+		}
+	});
+
+	ui.btnMotion.addEventListener("click", async () => {
+		try{
+			if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function"){
+				const res = await DeviceMotionEvent.requestPermission();
+				if (res !== "granted") throw new Error("DeviceMotion permission denied");
+			}
+			if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function"){
+				try{
+					const res2 = await DeviceOrientationEvent.requestPermission();
+					if (res2 !== "granted") console.warn("DeviceOrientation permission denied");
+				}catch(_){}
+			}
+
+			window.addEventListener("deviceorientation", (e) => {
+				if (e.beta == null || e.gamma == null) return;
+				ori.alpha = e.alpha || 0;
+				ori.beta  = e.beta  || 0;
+				ori.gamma = e.gamma || 0;
+				ori.have = true;
+			}, true);
+
+			window.addEventListener("devicemotion", (e) => {
+				const a = e.acceleration;
+				const ag = e.accelerationIncludingGravity;
+				let ax=0, ay=0, az=0;
+				if (a && (a.x != null)){
+					ax = a.x; ay = a.y; az = a.z;
+				}else if (ag && (ag.x != null)){
+					ax = ag.x; ay = ag.y; az = ag.z;
+				}
+				acc.x = ax || 0;
+				acc.y = ay || 0;
+				acc.z = az || 0;
+				acc.have = true;
+				acc.t = performance.now();
+			}, true);
+
+			motionEnabled = true;
+			setStatus();
+		}catch(e){
+			alert("Motion failed: " + e.message);
+		}
+	});
+
+	let gpsWatchId = null;
+	ui.btnGPS.addEventListener("click", async () => {
+		try{
+			if (!navigator.geolocation) throw new Error("Geolocation not available");
+			if (gpsWatchId != null) return;
+
+			gpsWatchId = navigator.geolocation.watchPosition(
+				(pos) => {
+					const c = pos.coords;
+					if (c.speed != null && !Number.isNaN(c.speed)){
+						gps.speedMS = Math.max(0, c.speed);
+					}
+					gps.accM = c.accuracy != null ? c.accuracy : 999;
+					gps.have = true;
+					gps.t = performance.now();
+					gps.heading = c.heading;
+					gpsEnabled = true;
+					setStatus();
+				},
+				(err) => {
+					console.warn(err);
+					alert("GPS error: " + err.message);
+				},
+				{ enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+			);
+		}catch(e){
+			alert("GPS failed: " + e.message);
+		}
+	});
+
+	setStatus();
+	requestAnimationFrame(() => { lastNow = performance.now(); tick(); });
+})();
+    </script>
+</body>
+
+</html>
