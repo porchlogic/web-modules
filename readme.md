@@ -16,6 +16,14 @@ riders1 : Group Glide — Single Note with Scale Crossfade
 
 synth-rider : Drone synth driven by your acceleration. Connect, start, and ride.
 
+m8-drone-control : 8-channel MIDI chord morph that crossfades between two scales.
+
+Basic note logic (m8-drone-control):
+- Each channel holds one note; at start it builds an 8-note chord by picking scale degrees from Scale A or Scale B based on the Blend slider.
+- Root + octave set the pitch center; Spread biases notes toward higher octaves (0, +12, +24) for wider voicings.
+- After Hold Time, the chord morphs in steps: a few channels change per step based on Density.
+- Each change replaces the channel’s note with a new random degree from the blended scales; Note Length 0 sustains until the next change.
+
 
 
 

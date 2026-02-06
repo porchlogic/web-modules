@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>M8 Drone Control - 8-Channel MIDI Chord Morph</title>
+<style>
+  :root{--bg:#0c1116;--panel:#121a24;--line:#1f2b39;--text:#e7eef7;--muted:#9fb0c7;--accent:#63c59a;--warn:#f3b274}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px system-ui}
+  .wrap{max-width:1000px;margin:0 auto;padding:16px}
+  h1{font-size:18px;margin:8px 0 10px;font-weight:600;letter-spacing:.2px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .row{display:flex;align-items:center;gap:10px;margin:8px 0}
+  .row label{flex:0 0 120px;color:var(--muted)}
+  .row input[type=range]{flex:1}
+  .btns{display:flex;gap:10px;flex-wrap:wrap}
+  button{appearance:none;border:1px solid var(--line);background:#0f1622;color:var(--text);padding:10px 14px;border-radius:10px;cursor:pointer}
+  button.primary{background:var(--accent);border-color:#2f7f64;color:#06140f;font-weight:600}
+  button.warn{background:#251a0f;border-color:#5a3a1f;color:#ffd6a5}
+  select, input{background:#0f1622;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px}
+  small{color:var(--muted)}
+  .status{margin-top:6px;color:var(--muted)}
+  .midi-log{display:grid;grid-template-columns:1fr;gap:8px;margin-top:6px}
+  .log-row{display:flex;gap:10px;align-items:center;padding:6px 8px;border-radius:8px;background:#0f1622;border:1px solid var(--line);font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;font-size:12px}
+  .log-label{min-width:48px;color:var(--warn)}
+  .log-msg{color:var(--text);word-break:break-word}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>M8 Drone Control - 8-Channel MIDI Chord Morph</h1>
+  <div class="card">
+    <div class="btns">
+      <button id="startBtn" class="primary">Start</button>
+      <button id="stopBtn" class="warn">Stop</button>
+      <button id="holdBtn">Hold (freeze morph)</button>
+      <button id="panicBtn">Panic (all notes off)</button>
+    </div>
+    <small>Use Chrome with Web MIDI enabled. Select your M8 output, then Start. Notes are sent on channels 1-8.</small>
+    <div class="status" id="status">MIDI: idle</div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <h2>Routing</h2>
+      <div class="row"><label>Output</label>
+        <select id="midiOut"></select>
+      </div>
+      <div class="row"><label>Velocity</label>
+        <input id="intensity" type="range" min="0" max="1" step="0.001" value="0.7">
+      </div>
+      <div class="row"><label>Hold Time</label>
+        <input id="holdTime" type="range" min="1" max="12" step="0.1" value="4.5">
+      </div>
+      <div class="row"><label>Morph Speed</label>
+        <input id="morphSpeed" type="range" min="0.05" max="1.5" step="0.01" value="0.35">
+      </div>
+    </div>
+    <div class="card">
+      <h2>Scale Crossfade</h2>
+      <div class="row"><label>Root</label>
+        <select id="root"></select>
+        <select id="oct"><option>1</option><option>2</option><option selected>3</option><option>4</option></select>
+      </div>
+      <div class="row"><label>Scale A</label>
+        <select id="scaleA"></select>
+      </div>
+      <div class="row"><label>Scale B</label>
+        <select id="scaleB"></select>
+      </div>
+      <div class="row"><label>Blend</label>
+        <input id="blend" type="range" min="0" max="1" step="0.001" value="0.45">
+      </div>
+      <div class="row"><label>Spread</label>
+        <input id="spread" type="range" min="0" max="1" step="0.001" value="0.55">
+      </div>
+    </div>
+    <div class="card">
+      <h2>Chord Behavior</h2>
+      <div class="row"><label>Step Density</label>
+        <input id="density" type="range" min="0" max="1" step="0.001" value="0.5">
+      </div>
+      <div class="row"><label>Note Length</label>
+        <input id="noteLen" type="range" min="0" max="3" step="0.05" value="0">
+      </div>
+      <small>Density controls how many channels update per morph step. Note length 0 = sustain.</small>
+    </div>
+    <div class="card">
+      <h2>MIDI Out Monitor</h2>
+      <small>Latest outgoing message per channel.</small>
+      <div id="midiLog" class="midi-log"></div>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+  const noteIndex = Object.fromEntries(NOTES.map((n,i)=>[n,i]));
+  const SCALES = {
+    "Dorian":[0,2,3,5,7,9,10],
+    "Phrygian":[0,1,3,5,7,8,10],
+    "Harmonic Minor":[0,2,3,5,7,8,11],
+    "Phrygian Dominant":[0,1,4,5,7,8,10],
+    "Octatonic (HW)":[0,1,3,4,6,7,9,10],
+    "Raga-like (Bhupali+)" :[0,2,4,7,9,11],
+    "Suspended":[0,2,5,7,9],
+    "Whole Tone":[0,2,4,6,8,10]
+  };
+
+  const state = {
+    root:"D", oct:3,
+    scaleA:"Phrygian", scaleB:"Phrygian Dominant", blend:0.45,
+    spread:0.55, intensity:0.7, density:0.5,
+    holdTime:4.5, morphSpeed:0.35, noteLen:0
+  };
+
+  const $ = s => document.querySelector(s);
+  const startBtn = $('#startBtn');
+  const stopBtn = $('#stopBtn');
+  const holdBtn = $('#holdBtn');
+  const panicBtn = $('#panicBtn');
+  const statusEl = $('#status');
+
+  const midiOutSel = $('#midiOut');
+  const rootSel = $('#root');
+  const octSel = $('#oct');
+  const scaleA = $('#scaleA');
+  const scaleB = $('#scaleB');
+  const blend = $('#blend');
+  const spread = $('#spread');
+  const intensity = $('#intensity');
+  const density = $('#density');
+  const holdTime = $('#holdTime');
+  const morphSpeed = $('#morphSpeed');
+  const noteLen = $('#noteLen');
+  const midiLog = $('#midiLog');
+
+  let midiAccess = null;
+  let midiOut = null;
+  let running = false;
+  let hold = false;
+  let timer = null;
+  let currentChord = [];
+  let targetChord = [];
+  let morphCursor = 0;
+  let chordHoldUntil = 0;
+  let preferredOutId = null;
+  let preferredOutName = null;
+  let awaitingReconnect = false;
+  const activeNotes = new Array(8).fill(null);
+  const channelLogEls = new Array(8).fill(null);
+
+  function fillRoots(){
+    NOTES.forEach(n => { const o=document.createElement('option'); o.textContent=n; rootSel.appendChild(o); });
+    rootSel.value = state.root;
+  }
+
+  function fillScales(){
+    for(const n of Object.keys(SCALES)){
+      const a=document.createElement('option'); a.textContent=n;
+      const b=a.cloneNode(true);
+      scaleA.appendChild(a); scaleB.appendChild(b);
+    }
+    scaleA.value = state.scaleA; scaleB.value = state.scaleB;
+  }
+
+  function updateStatus(msg){ statusEl.textContent = msg; }
+
+  function buildLog(){
+    midiLog.innerHTML = '';
+    for(let ch=0; ch<8; ch++){
+      const row = document.createElement('div');
+      row.className = 'log-row';
+      row.innerHTML = `<span class="log-label">Ch ${ch+1}</span><span class="log-msg">-</span>`;
+      midiLog.appendChild(row);
+      channelLogEls[ch] = row.querySelector('.log-msg');
+    }
+  }
+
+  function logMidi(ch, label, data){
+    if(!channelLogEls[ch]) return;
+    const hex = data.map(v => v.toString(16).padStart(2,'0').toUpperCase()).join(' ');
+    channelLogEls[ch].textContent = `${label} (${hex})`;
+  }
+
+  function listOutputs(){
+    const wasOutId = midiOut ? midiOut.id : preferredOutId;
+    midiOutSel.innerHTML = '';
+    const outs = midiAccess ? Array.from(midiAccess.outputs.values()) : [];
+    outs.forEach((out, idx) => {
+      const opt = document.createElement('option');
+      opt.value = out.id; opt.textContent = out.name || `MIDI Output ${idx+1}`;
+      midiOutSel.appendChild(opt);
+    });
+    const byId = preferredOutId ? outs.find(out => out.id === preferredOutId) : null;
+    const byName = !byId && preferredOutName ? outs.find(out => out.name === preferredOutName) : null;
+    midiOut = byId || byName || outs[0] || null;
+    if(midiOut){
+      midiOutSel.value = midiOut.id;
+      preferredOutId = midiOut.id;
+      preferredOutName = midiOut.name || null;
+    }
+    const stillMissing = wasOutId && !outs.find(out => out.id === wasOutId);
+    const regainedPreferred = stillMissing && (byId || byName);
+    if(stillMissing && running && !regainedPreferred){
+      awaitingReconnect = true;
+      midiOut = null;
+      updateStatus('MIDI: output disconnected, waiting to reconnect');
+      return;
+    }
+    if(!outs.length){
+      midiOut = null;
+      updateStatus('MIDI: no outputs found');
+      return;
+    }
+    if(!midiOut){
+      updateStatus('MIDI: select an output first');
+      return;
+    }
+    if(awaitingReconnect || regainedPreferred){
+      awaitingReconnect = false;
+      if(running) primeChord();
+      updateStatus(`MIDI: reconnected (${midiOut.name || 'output selected'})`);
+      return;
+    }
+    updateStatus(`MIDI: ready (${midiOut.name || 'output selected'})`);
+  }
+
+  function requestMidi(){
+    if(!navigator.requestMIDIAccess){
+      updateStatus('MIDI: Web MIDI not supported');
+      return Promise.resolve(null);
+    }
+    return navigator.requestMIDIAccess({sysex:false}).then(access => {
+      midiAccess = access;
+      listOutputs();
+      midiAccess.onstatechange = listOutputs;
+      return midiAccess;
+    }).catch(() => {
+      updateStatus('MIDI: permission denied');
+      return null;
+    });
+  }
+
+  function pickMidiNote(){
+    const root = noteIndex[state.root] + 12*(parseInt(state.oct,10)||3);
+    const baseMidi = 24 + root;
+    const scale = (Math.random() < state.blend) ? SCALES[state.scaleB] : SCALES[state.scaleA];
+    const deg = scale[(Math.random()*scale.length)|0];
+    const spreadChoices = [0, 12, 24];
+    const spreadBias = Math.max(0, Math.min(1, state.spread));
+    const octaveIndex = Math.random() < spreadBias ? 2 : (Math.random() < 0.6 ? 1 : 0);
+    return baseMidi + deg + spreadChoices[octaveIndex];
+  }
+
+  function buildChord(){
+    const chord = [];
+    for(let i=0;i<8;i++) chord.push(pickMidiNote());
+    return chord;
+  }
+
+  function sendNoteOn(channel, note, velocity){
+    if(!midiOut) return;
+    const msg = [0x90 + channel, note & 0x7f, velocity & 0x7f];
+    midiOut.send(msg);
+    logMidi(channel, `Note On ${note} v${velocity}`, msg);
+  }
+
+  function sendNoteOff(channel, note){
+    if(!midiOut) return;
+    const msg = [0x80 + channel, note & 0x7f, 0];
+    midiOut.send(msg);
+    logMidi(channel, `Note Off ${note}`, msg);
+  }
+
+  function allNotesOff(){
+    if(!midiOut) return;
+    for(let ch=0; ch<8; ch++){
+      const msg = [0xB0 + ch, 0x7B, 0];
+      midiOut.send(msg);
+      logMidi(ch, 'CC 123 All Notes Off', msg);
+      if(activeNotes[ch] !== null){
+        sendNoteOff(ch, activeNotes[ch]);
+        activeNotes[ch] = null;
+      }
+    }
+  }
+
+  function setChannelNote(ch, note){
+    if(activeNotes[ch] === note) return;
+    if(activeNotes[ch] !== null) sendNoteOff(ch, activeNotes[ch]);
+    activeNotes[ch] = note;
+    const vel = Math.max(8, Math.min(120, Math.round(20 + state.intensity * 90)));
+    sendNoteOn(ch, note, vel);
+    const lenMs = state.noteLen * 1000;
+    if(lenMs > 0){
+      const offNote = note;
+      setTimeout(() => {
+        if(activeNotes[ch] === offNote){
+          sendNoteOff(ch, offNote);
+          activeNotes[ch] = null;
+        }
+      }, lenMs);
+    }
+  }
+
+  function primeChord(){
+    currentChord = buildChord();
+    targetChord = buildChord();
+    morphCursor = 0;
+    chordHoldUntil = performance.now() + state.holdTime * 1000;
+    for(let i=0;i<8;i++) setChannelNote(i, currentChord[i]);
+  }
+
+  function morphStep(){
+    if(!running || !midiOut) return;
+    if(hold) return;
+    const now = performance.now();
+    if(now < chordHoldUntil) return;
+
+    if(morphCursor >= 8){
+      targetChord = buildChord();
+      morphCursor = 0;
+      chordHoldUntil = now + state.holdTime * 1000;
+      return;
+    }
+
+    const changes = Math.max(1, Math.min(4, 1 + Math.round(state.density * 3)));
+    for(let i=0;i<changes && morphCursor < 8;i++){
+      const idx = morphCursor;
+      const next = targetChord[idx];
+      currentChord[idx] = next;
+      setChannelNote(idx, next);
+      morphCursor++;
+    }
+  }
+
+  function start(){
+    if(running) return;
+    requestMidi().then(() => {
+      if(!midiOut){
+        updateStatus('MIDI: select an output first');
+        return;
+      }
+      running = true;
+      primeChord();
+      const intervalMs = () => Math.max(120, 2000 - state.morphSpeed * 1200);
+      timer = setInterval(morphStep, intervalMs());
+      updateStatus(`MIDI: running (${midiOut.name || 'output selected'})`);
+    });
+  }
+
+  function stop(){
+    running = false;
+    if(timer){ clearInterval(timer); timer = null; }
+    allNotesOff();
+    updateStatus('MIDI: stopped');
+  }
+
+  startBtn.onclick = start;
+  stopBtn.onclick = stop;
+  panicBtn.onclick = allNotesOff;
+  holdBtn.onclick = () => {
+    hold = !hold;
+    holdBtn.classList.toggle('primary', hold);
+    holdBtn.textContent = hold ? 'Holding (release to morph)' : 'Hold (freeze morph)';
+  };
+
+  midiOutSel.oninput = e => {
+    if(!midiAccess) return;
+    midiOut = midiAccess.outputs.get(e.target.value) || null;
+    preferredOutId = midiOut ? midiOut.id : null;
+    preferredOutName = midiOut ? midiOut.name : null;
+    updateStatus(midiOut ? `MIDI: ready (${midiOut.name || 'output selected'})` : 'MIDI: no outputs found');
+  };
+
+  rootSel.oninput = e => state.root = e.target.value;
+  octSel.oninput = e => state.oct = e.target.value;
+  scaleA.oninput = e => state.scaleA = e.target.value;
+  scaleB.oninput = e => state.scaleB = e.target.value;
+  blend.oninput = e => state.blend = +e.target.value;
+  spread.oninput = e => state.spread = +e.target.value;
+  intensity.oninput = e => state.intensity = +e.target.value;
+  density.oninput = e => state.density = +e.target.value;
+  holdTime.oninput = e => state.holdTime = +e.target.value;
+  morphSpeed.oninput = e => {
+    state.morphSpeed = +e.target.value;
+    if(running){
+      clearInterval(timer);
+      timer = setInterval(morphStep, Math.max(120, 2000 - state.morphSpeed * 1200));
+    }
+  };
+  noteLen.oninput = e => state.noteLen = +e.target.value;
+
+  fillRoots();
+  fillScales();
+  buildLog();
+  updateStatus('MIDI: idle');
+})();
+</script>
+</body>
+</html>

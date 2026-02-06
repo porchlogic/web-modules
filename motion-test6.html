@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Accelerometer Threshold Monitor</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            background: #0e0e11;
+            color: #eaeaf0;
+            margin: 0;
+            padding: 16px;
+        }
+
+        h1 {
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        label {
+            font-size: 12px;
+            opacity: 0.85;
+        }
+
+        input[type="range"] {
+            width: 100%;
+        }
+
+        .bars {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .bar-wrap {
+            background: #1a1a22;
+            padding: 8px;
+            border-radius: 8px;
+        }
+
+        .bar {
+            height: 80px;
+            background: linear-gradient(180deg, #4af, #147);
+            transform-origin: bottom;
+            transform: scaleY(0);
+            border-radius: 4px;
+        }
+
+        .axis-label {
+            text-align: center;
+            font-size: 12px;
+            margin-top: 6px;
+        }
+
+        .indicator {
+            height: 40px;
+            border-radius: 8px;
+            background: #222;
+            box-shadow: inset 0 0 0 1px #333;
+            transition: background 0.15s;
+        }
+
+        .indicator.on {
+            background: #2cff6a;
+            box-shadow: 0 0 16px rgba(44, 255, 106, 0.6);
+        }
+
+        .note {
+            font-size: 11px;
+            opacity: 0.7;
+            margin-top: 12px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Accelerometer Threshold Monitor</h1>
+
+    <div class="controls">
+        <div>
+            <label>
+                Averaging window (seconds): <span id="windowLabel">0.50</span>
+            </label>
+            <input id="windowSlider" type="range" min="0.1" max="2.0" step="0.05" value="0.5" />
+        </div>
+        <div>
+            <label>
+                Threshold (m/s²): <span id="thresholdLabel">3.0</span>
+            </label>
+            <input id="thresholdSlider" type="range" min="0.5" max="10" step="0.1" value="3.0" />
+        </div>
+    </div>
+
+    <div class="bars">
+        <div class="bar-wrap">
+            <div class="bar" id="barX"></div>
+            <div class="axis-label">X</div>
+        </div>
+        <div class="bar-wrap">
+            <div class="bar" id="barY"></div>
+            <div class="axis-label">Y</div>
+        </div>
+        <div class="bar-wrap">
+            <div class="bar" id="barZ"></div>
+            <div class="axis-label">Z</div>
+        </div>
+    </div>
+
+    <div class="indicator" id="indicator"></div>
+
+    <div class="note">
+        Requires HTTPS and user interaction on mobile (iOS needs permission prompt).
+    </div>
+
+    <script>
+	const barX = document.getElementById("barX");
+	const barY = document.getElementById("barY");
+	const barZ = document.getElementById("barZ");
+	const indicator = document.getElementById("indicator");
+
+	const windowSlider = document.getElementById("windowSlider");
+	const thresholdSlider = document.getElementById("thresholdSlider");
+	const windowLabel = document.getElementById("windowLabel");
+	const thresholdLabel = document.getElementById("thresholdLabel");
+
+	let windowSeconds = parseFloat(windowSlider.value);
+	let threshold = parseFloat(thresholdSlider.value);
+
+	windowLabel.textContent = windowSeconds.toFixed(2);
+	thresholdLabel.textContent = threshold.toFixed(1);
+
+	windowSlider.oninput = () => {
+		windowSeconds = parseFloat(windowSlider.value);
+		windowLabel.textContent = windowSeconds.toFixed(2);
+	};
+
+	thresholdSlider.oninput = () => {
+		threshold = parseFloat(thresholdSlider.value);
+		thresholdLabel.textContent = threshold.toFixed(1);
+	};
+
+	// Rolling buffer of samples: { t, x, y, z }
+	const samples = [];
+
+	function pruneSamples(now) {
+		const cutoff = now - windowSeconds * 1000;
+		while (samples.length && samples[0].t < cutoff) {
+			samples.shift();
+		}
+	}
+
+	function averageMagnitude(axis) {
+		if (!samples.length) return 0;
+		let sum = 0;
+		for (const s of samples) {
+			sum += Math.abs(s[axis]);
+		}
+		return sum / samples.length;
+	}
+
+	function updateUI(avgX, avgY, avgZ) {
+		const scale = v => Math.min(v / threshold, 1);
+		barX.style.transform = `scaleY(${scale(avgX)})`;
+		barY.style.transform = `scaleY(${scale(avgY)})`;
+		barZ.style.transform = `scaleY(${scale(avgZ)})`;
+
+		if (avgX > threshold || avgY > threshold || avgZ > threshold) {
+			indicator.classList.add("on");
+		} else {
+			indicator.classList.remove("on");
+		}
+	}
+
+	function handleMotion(e) {
+		const a = e.accelerationIncludingGravity;
+		if (!a) return;
+
+		const now = performance.now();
+		samples.push({
+			t: now,
+			x: a.x || 0,
+			y: a.y || 0,
+			z: a.z || 0
+		});
+
+		pruneSamples(now);
+
+		const avgX = averageMagnitude("x");
+		const avgY = averageMagnitude("y");
+		const avgZ = averageMagnitude("z");
+
+		updateUI(avgX, avgY, avgZ);
+	}
+
+	async function init() {
+		if (typeof DeviceMotionEvent !== "undefined" &&
+			typeof DeviceMotionEvent.requestPermission === "function") {
+			const btn = document.createElement("button");
+			btn.textContent = "Enable Accelerometer";
+			btn.style.padding = "12px";
+			btn.onclick = async () => {
+				const res = await DeviceMotionEvent.requestPermission();
+				if (res === "granted") {
+					window.addEventListener("devicemotion", handleMotion);
+					btn.remove();
+				}
+			};
+			document.body.prepend(btn);
+		} else {
+			window.addEventListener("devicemotion", handleMotion);
+		}
+	}
+
+	init();
+    </script>
+</body>
+
+</html>

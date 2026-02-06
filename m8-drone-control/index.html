@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>M8 Web MIDI — 8ch Scale Sender</title>
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+    <div class="app">
+        <header>
+            <div>
+                <h1>M8 Web MIDI — 8-Track Scale Sender</h1>
+                <div class="subtitle">Pick an output device (M8), choose root + scale, toggle output to send notes on
+                    channels 1–8.</div>
+            </div>
+            <div class="subtitle" id="supportNote"></div>
+        </header>
+
+        <section data-section="midi">
+            <div class="section-title">
+                <h2>1) MIDI Output Device</h2>
+                <div class="hint">You must grant MIDI access once per page load.</div>
+            </div>
+
+            <div class="row align-end">
+                <div style="flex:2 1 280px;">
+                    <label for="outSelect">Output</label>
+                    <select id="outSelect" disabled>
+                        <option value="">(connect first)</option>
+                    </select>
+                </div>
+
+                <div style="flex:1 1 220px;">
+                    <label>&nbsp;</label>
+                    <button id="btnConnect" class="primary">Connect MIDI</button>
+                </div>
+
+                <div style="flex:1 1 220px;">
+                    <label>&nbsp;</label>
+                    <button id="btnPanic" class="danger" disabled>Panic (All Notes Off)</button>
+                </div>
+            </div>
+
+            <div class="status" id="midiStatus">
+                <strong>Status:</strong> <span class="bad">Not connected.</span>
+            </div>
+        </section>
+
+        <section data-section="tracks">
+            <div class="section-title">
+                <h2>2) Track Visualization</h2>
+                <div class="hint">Shows the target note number per channel (1–8). Pitch slides over 3s when it changes.
+                </div>
+            </div>
+
+            <div class="tracks" id="tracks"></div>
+        </section>
+
+        <section data-section="scale">
+            <div class="section-title">
+                <h2>3) Root Note + Scale</h2>
+                <div class="hint">Changing these while output is ON will slide pitches (no Note Off/On).</div>
+            </div>
+
+            <div class="two">
+                <div>
+                    <label for="rootSelect">Root note</label>
+                    <select id="rootSelect" disabled></select>
+                </div>
+                <div>
+                    <label for="scaleSelect">Scale / mode</label>
+                    <select id="scaleSelect" disabled></select>
+                </div>
+            </div>
+        </section>
+
+        <section data-section="output">
+            <div class="section-title">
+                <h2>4) Output</h2>
+                <div class="hint">Toggle ON sends Note On. Toggle OFF sends Note Off. Root/scale changes only send Pitch
+                    Bend ramps.</div>
+            </div>
+
+            <div class="toggleRow">
+                <div class="toggleWrap">
+                    <div class="switch">
+                        <input id="outputToggle" type="checkbox" disabled />
+                    </div>
+                    <div class="toggleLabel" id="toggleLabel">Output OFF</div>
+                </div>
+
+                <div class="smallActions">
+                    <button id="btnResend" disabled>Resend Notes</button>
+                </div>
+            </div>
+
+            <hr class="sep" />
+            <div class="status" id="notePlan">
+                <strong>Planned notes:</strong> —
+            </div>
+        </section>
+    </div>
+    <script type="module" src="./js/main.js"></script>
+</body>
+
+</html>
