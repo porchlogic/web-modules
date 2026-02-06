@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>X-Axis Accumulation Trigger</title>
+    <title>Multi-Axis Accumulation Trigger</title>
 
     <style>
         body {
@@ -21,6 +21,9 @@
         }
 
         .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
             margin-bottom: 16px;
         }
 
@@ -33,11 +36,18 @@
             width: 100%;
         }
 
-        .bar-wrap {
+        .axes {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .axis {
             background: #1a1a22;
             padding: 8px;
             border-radius: 8px;
-            margin-bottom: 16px;
+            text-align: center;
         }
 
         .bar {
@@ -46,7 +56,33 @@
             transform-origin: center;
             transform: scaleY(0);
             border-radius: 4px;
-            transition: transform 0.05s linear;
+            margin-bottom: 6px;
+        }
+
+        .axis-label {
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+
+        button {
+            font-size: 11px;
+            padding: 4px 6px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            background: #333;
+            color: #fff;
+        }
+
+        button.on {
+            background: #2cff6a;
+            color: #000;
+        }
+
+        .readout {
+            font-size: 11px;
+            opacity: 0.8;
+            margin-top: 4px;
         }
 
         .indicator {
@@ -61,84 +97,148 @@
             background: #ff4a4a;
             box-shadow: 0 0 16px rgba(255, 74, 74, 0.6);
         }
-
-        .readout {
-            font-size: 12px;
-            margin-top: 8px;
-            opacity: 0.85;
-        }
     </style>
 </head>
 
 <body>
 
-    <h1>X-Axis 100 ms Accumulation Trigger</h1>
+    <h1>Multi-Axis Accumulation Trigger</h1>
 
     <div class="controls">
-        <label>
-            Threshold (Σx): <span id="thresholdLabel">1.0</span>
-        </label>
-        <input id="thresholdSlider" type="range" min="0.1" max="10" step="0.1" value="1.0" />
+        <div>
+            <label>
+                Time window (ms): <span id="windowLabel">100</span>
+            </label>
+            <input id="windowSlider" type="range" min="20" max="1000" step="10" value="100" />
+        </div>
+        <div>
+            <label>
+                Threshold (Σ axes): <span id="thresholdLabel">10</span>
+            </label>
+            <input id="thresholdSlider" type="range" min="1" max="100" step="1" value="10" />
+        </div>
     </div>
 
-    <div class="bar-wrap">
-        <div class="bar" id="barX"></div>
-        <div class="readout">
-            Σx (last 100 ms): <span id="sumLabel">0.00</span>
+    <div class="axes">
+        <div class="axis">
+            <div class="bar" id="barX"></div>
+            <div class="axis-label">X</div>
+            <button id="toggleX" class="on">IN</button>
+            <div class="readout">Σx: <span id="sumX">0.00</span></div>
+        </div>
+        <div class="axis">
+            <div class="bar" id="barY"></div>
+            <div class="axis-label">Y</div>
+            <button id="toggleY" class="on">IN</button>
+            <div class="readout">Σy: <span id="sumY">0.00</span></div>
+        </div>
+        <div class="axis">
+            <div class="bar" id="barZ"></div>
+            <div class="axis-label">Z</div>
+            <button id="toggleZ" class="on">IN</button>
+            <div class="readout">Σz: <span id="sumZ">0.00</span></div>
         </div>
     </div>
 
     <div class="indicator" id="indicator"></div>
 
     <script>
-        const barX = document.getElementById("barX");
-        const indicator = document.getElementById("indicator");
-        const sumLabel = document.getElementById("sumLabel");
+        const bars = {
+            x: document.getElementById("barX"),
+            y: document.getElementById("barY"),
+            z: document.getElementById("barZ")
+        };
 
+        const sumsUI = {
+            x: document.getElementById("sumX"),
+            y: document.getElementById("sumY"),
+            z: document.getElementById("sumZ")
+        };
+
+        const toggles = {
+            x: document.getElementById("toggleX"),
+            y: document.getElementById("toggleY"),
+            z: document.getElementById("toggleZ")
+        };
+
+        const indicator = document.getElementById("indicator");
+
+        const windowSlider = document.getElementById("windowSlider");
         const thresholdSlider = document.getElementById("thresholdSlider");
+        const windowLabel = document.getElementById("windowLabel");
         const thresholdLabel = document.getElementById("thresholdLabel");
 
+        let windowMs = parseInt(windowSlider.value, 10);
         let threshold = parseFloat(thresholdSlider.value);
-        thresholdLabel.textContent = threshold.toFixed(1);
+
+        windowLabel.textContent = windowMs;
+        thresholdLabel.textContent = threshold;
+
+        windowSlider.oninput = () => {
+            windowMs = parseInt(windowSlider.value, 10);
+            windowLabel.textContent = windowMs;
+        };
 
         thresholdSlider.oninput = () => {
             threshold = parseFloat(thresholdSlider.value);
-            thresholdLabel.textContent = threshold.toFixed(1);
+            thresholdLabel.textContent = threshold;
         };
 
-        // Rolling samples: { t, x }
+        const axisEnabled = { x: true, y: true, z: true };
+
+        for (const axis of ["x", "y", "z"]) {
+            toggles[axis].onclick = () => {
+                axisEnabled[axis] = !axisEnabled[axis];
+                toggles[axis].classList.toggle("on", axisEnabled[axis]);
+                toggles[axis].textContent = axisEnabled[axis] ? "IN" : "OUT";
+            };
+        }
+
+        // samples: { t, x, y, z }
         const samples = [];
-        const WINDOW_MS = 100;
 
         function pruneSamples(now) {
-            const cutoff = now - WINDOW_MS;
+            const cutoff = now - windowMs;
             while (samples.length && samples[0].t < cutoff) {
                 samples.shift();
             }
         }
 
-        function cumulativeX() {
+        function cumulative(axis) {
             let sum = 0;
-            for (const s of samples) sum += s.x;
+            for (const s of samples) sum += s[axis];
             return sum;
         }
 
         function handleMotion(e) {
-            const a = e.acceleration; // gravity-compensated
-            if (!a || a.x == null) return;
+            const a = e.acceleration;
+            if (!a) return;
 
             const now = performance.now();
-            samples.push({ t: now, x: a.x });
+            samples.push({
+                t: now,
+                x: a.x || 0,
+                y: a.y || 0,
+                z: a.z || 0
+            });
+
             pruneSamples(now);
 
-            const sumX = cumulativeX();
-            sumLabel.textContent = sumX.toFixed(2);
+            let total = 0;
 
-            // Visual bar (scaled for visibility)
-            const visualScale = Math.max(-1, Math.min(1, sumX / threshold));
-            barX.style.transform = `scaleY(${Math.abs(visualScale)})`;
+            for (const axis of ["x", "y", "z"]) {
+                const sum = cumulative(axis);
+                sumsUI[axis].textContent = sum.toFixed(2);
 
-            if (Math.abs(sumX) > threshold) {
+                const vis = Math.min(Math.abs(sum / threshold), 1);
+                bars[axis].style.transform = `scaleY(${vis})`;
+
+                if (axisEnabled[axis]) {
+                    total += sum;
+                }
+            }
+
+            if (Math.abs(total) > threshold) {
                 indicator.classList.add("on");
             } else {
                 indicator.classList.remove("on");
