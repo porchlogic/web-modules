@@ -160,14 +160,15 @@
 		}
 	}
 
-	function averageMagnitude(axis) {
-		if (!samples.length) return 0;
-		let sum = 0;
-		for (const s of samples) {
-			sum += Math.abs(s[axis]);
-		}
-		return sum / samples.length;
-	}
+	function averageAxis(axis) {
+        if (!samples.length) return 0;
+        let sum = 0;
+        for (const s of samples) {
+            sum += s[axis];
+        }
+        return sum / samples.length;
+    }
+
 
 	function updateUI(avgX, avgY, avgZ) {
 		const scale = v => Math.min(v / threshold, 1);
@@ -198,9 +199,10 @@
 
 		pruneSamples(now);
 
-		const avgX = averageMagnitude("x");
-		const avgY = averageMagnitude("y");
-		const avgZ = averageMagnitude("z");
+		const avgX = averageAxis("x");
+        const avgY = averageAxis("y");
+        const avgZ = averageAxis("z");
+
 
 		updateUI(avgX, avgY, avgZ);
 	}
