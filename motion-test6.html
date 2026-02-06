@@ -183,7 +183,9 @@
 	}
 
 	function handleMotion(e) {
-		const a = e.accelerationIncludingGravity;
+		// const a = e.accelerationIncludingGravity;
+        const a = e.acceleration;
+
 		if (!a) return;
 
 		const now = performance.now();

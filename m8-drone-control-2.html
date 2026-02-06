@@ -1,388 +1,445 @@
 <!doctype html>
 <html lang="en">
+
 <head>
-	<meta charset="utf-8" />
-	<meta name="viewport" content="width=device-width,initial-scale=1" />
-	<title>M8 Web MIDI — 8ch Scale Sender</title>
-	<style>
-		:root{
-			--bg: #0b0c0f;
-			--panel: #101217;
-			--panel2: #0e1014;
-			--border: rgba(255,255,255,.08);
-			--text: rgba(255,255,255,.88);
-			--muted: rgba(255,255,255,.55);
-			--accent: #8dfcff;		/* subtle neon */
-			--accent2: #a6ff9a;		/* subtle neon alt */
-			--danger: #ff6b8b;
-			--shadow: 0 10px 30px rgba(0,0,0,.45);
-			--radius: 14px;
-		}
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>M8 Web MIDI — 8ch Scale Sender</title>
+    <style>
+        :root {
+            --bg: #0b0c0f;
+            --panel: #101217;
+            --panel2: #0e1014;
+            --border: rgba(255, 255, 255, .08);
+            --text: rgba(255, 255, 255, .88);
+            --muted: rgba(255, 255, 255, .55);
+            --accent: #8dfcff;
+            /* subtle neon */
+            --accent2: #a6ff9a;
+            /* subtle neon alt */
+            --danger: #ff6b8b;
+            --shadow: 0 10px 30px rgba(0, 0, 0, .45);
+            --radius: 14px;
+        }
 
-		*{ box-sizing:border-box; }
-		html, body{ height:100%; }
-		body{
-			margin:0;
-			font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-			background: radial-gradient(1200px 800px at 70% 10%, rgba(141,252,255,.08), transparent 60%),
-						radial-gradient(900px 700px at 15% 80%, rgba(166,255,154,.06), transparent 55%),
-						var(--bg);
-			color: var(--text);
-		}
+        * {
+            box-sizing: border-box;
+        }
 
-		.app{
-			max-width: 1100px;
-			margin: 24px auto;
-			padding: 0 16px 40px;
-		}
+        html,
+        body {
+            height: 100%;
+        }
 
-		header{
-			display:flex;
-			align-items:baseline;
-			justify-content:space-between;
-			gap:16px;
-			margin: 8px 0 18px;
-		}
-		h1{
-			margin:0;
-			font-size: 18px;
-			letter-spacing:.3px;
-			font-weight: 650;
-		}
-		.subtitle{
-			color: var(--muted);
-			font-size: 12px;
-		}
+        body {
+            margin: 0;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+            background: radial-gradient(1200px 800px at 70% 10%, rgba(141, 252, 255, .08), transparent 60%),
+                radial-gradient(900px 700px at 15% 80%, rgba(166, 255, 154, .06), transparent 55%),
+                var(--bg);
+            color: var(--text);
+        }
 
-		section{
-			background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01));
-			border: 1px solid var(--border);
-			border-radius: var(--radius);
-			box-shadow: var(--shadow);
-			padding: 14px;
-			margin: 12px 0;
-		}
+        .app {
+            max-width: 1100px;
+            margin: 24px auto;
+            padding: 0 16px 40px;
+        }
 
-		.section-title{
-			display:flex;
-			align-items:center;
-			justify-content:space-between;
-			gap:12px;
-			margin-bottom: 10px;
-		}
-		.section-title h2{
-			margin:0;
-			font-size: 13px;
-			font-weight: 650;
-			letter-spacing:.25px;
-			color: rgba(255,255,255,.82);
-		}
-		.section-title .hint{
-			font-size: 12px;
-			color: var(--muted);
-		}
+        header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 16px;
+            margin: 8px 0 18px;
+        }
 
-		.row{
-			display:flex;
-			gap: 12px;
-			flex-wrap: wrap;
-			align-items: center;
-		}
-		.row > *{ flex: 1 1 auto; }
+        h1 {
+            margin: 0;
+            font-size: 18px;
+            letter-spacing: .3px;
+            font-weight: 650;
+        }
 
-		label{
-			display:block;
-			font-size: 12px;
-			color: var(--muted);
-			margin-bottom: 6px;
-		}
+        .subtitle {
+            color: var(--muted);
+            font-size: 12px;
+        }
 
-		select, button{
-			width:100%;
-			background: rgba(255,255,255,.03);
-			border: 1px solid var(--border);
-			color: var(--text);
-			border-radius: 12px;
-			padding: 10px 10px;
-			outline: none;
-		}
-		select:focus, button:focus{
-			border-color: rgba(141,252,255,.35);
-			box-shadow: 0 0 0 3px rgba(141,252,255,.10);
-		}
-		button{
-			cursor:pointer;
-			font-weight: 600;
-		}
-		button:hover{
-			border-color: rgba(255,255,255,.18);
-		}
-		button.primary{
-			border-color: rgba(141,252,255,.25);
-		}
-		button.primary:hover{
-			border-color: rgba(141,252,255,.45);
-		}
-		button.danger{
-			border-color: rgba(255,107,139,.25);
-		}
-		button.danger:hover{
-			border-color: rgba(255,107,139,.5);
-		}
+        section {
+            background: linear-gradient(180deg, rgba(255, 255, 255, .03), rgba(255, 255, 255, .01));
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 14px;
+            margin: 12px 0;
+        }
 
-		.status{
-			margin-top: 10px;
-			font-size: 12px;
-			color: var(--muted);
-			line-height: 1.35;
-		}
-		.status strong{
-			color: rgba(255,255,255,.85);
-			font-weight: 650;
-		}
-		.status .ok{ color: rgba(166,255,154,.9); }
-		.status .bad{ color: rgba(255,107,139,.9); }
+        .section-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
 
-		/* 8 track visualization */
-		.tracks{
-			display:grid;
-			grid-template-columns: repeat(8, minmax(0, 1fr));
-			gap: 10px;
-		}
-		.track{
-			background: linear-gradient(180deg, rgba(0,0,0,.18), rgba(0,0,0,.05));
-			border: 1px solid var(--border);
-			border-radius: 14px;
-			padding: 10px 10px 12px;
-			min-height: 92px;
-			display:flex;
-			flex-direction:column;
-			justify-content:space-between;
-		}
-		.track .ch{
-			font-size: 11px;
-			color: var(--muted);
-			letter-spacing:.25px;
-			display:flex;
-			align-items:center;
-			justify-content:space-between;
-			gap:8px;
-		}
-		.track .ch .dot{
-			width: 8px;
-			height: 8px;
-			border-radius: 99px;
-			background: rgba(255,255,255,.14);
-			box-shadow: none;
-		}
-		.track.active .ch .dot{
-			background: var(--accent);
-			box-shadow: 0 0 16px rgba(141,252,255,.22);
-		}
+        .section-title h2 {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 650;
+            letter-spacing: .25px;
+            color: rgba(255, 255, 255, .82);
+        }
 
-		.track .note{
-			font-variant-numeric: tabular-nums;
-			font-size: 28px;
-			font-weight: 720;
-			letter-spacing: .5px;
-			color: rgba(255,255,255,.92);
-			min-height: 34px;
-			display:flex;
-			align-items:flex-end;
-		}
-		.track .note.empty{
-			color: rgba(255,255,255,.18);
-			font-weight: 650;
-		}
+        .section-title .hint {
+            font-size: 12px;
+            color: var(--muted);
+        }
 
-		/* 2-column section */
-		.two{
-			display:grid;
-			grid-template-columns: 1fr 1fr;
-			gap: 12px;
-		}
-		@media (max-width: 900px){
-			.tracks{ grid-template-columns: repeat(4, minmax(0, 1fr)); }
-		}
-		@media (max-width: 560px){
-			.tracks{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
-			.two{ grid-template-columns: 1fr; }
-		}
+        .row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
 
-		/* Toggle switch */
-		.toggleRow{
-			display:flex;
-			align-items:center;
-			justify-content:space-between;
-			gap: 14px;
-		}
-		.toggleWrap{
-			display:flex;
-			align-items:center;
-			gap: 12px;
-		}
-		.toggleLabel{
-			font-size: 13px;
-			color: rgba(255,255,255,.82);
-			font-weight: 650;
-			letter-spacing: .25px;
-		}
-		.switch{
-			position: relative;
-			width: 56px;
-			height: 32px;
-			flex: 0 0 auto;
-		}
-		.switch input{
-			appearance:none;
-			-webkit-appearance:none;
-			width: 56px;
-			height: 32px;
-			background: rgba(255,255,255,.05);
-			border: 1px solid var(--border);
-			border-radius: 999px;
-			outline:none;
-			cursor:pointer;
-			transition: background .15s, border-color .15s;
-		}
-		.switch input::before{
-			content:"";
-			position:absolute;
-			top: 5px;
-			left: 6px;
-			width: 22px;
-			height: 22px;
-			border-radius: 999px;
-			background: rgba(255,255,255,.75);
-			transition: transform .18s ease, background .15s;
-			box-shadow: 0 8px 18px rgba(0,0,0,.35);
-		}
-		.switch input:checked{
-			background: rgba(141,252,255,.12);
-			border-color: rgba(141,252,255,.35);
-		}
-		.switch input:checked::before{
-			transform: translateX(22px);
-			background: var(--accent);
-			box-shadow: 0 0 18px rgba(141,252,255,.20), 0 8px 18px rgba(0,0,0,.35);
-		}
+        .row>* {
+            flex: 1 1 auto;
+        }
 
-		.smallActions{
-			display:flex;
-			gap: 10px;
-			flex-wrap: wrap;
-			justify-content:flex-end;
-		}
-		.smallActions button{
-			width:auto;
-			min-width: 160px;
-		}
+        label {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
 
-		hr.sep{
-			border: none;
-			border-top: 1px solid rgba(255,255,255,.06);
-			margin: 10px 0 0;
-		}
-	</style>
+        select,
+        button {
+            width: 100%;
+            background: rgba(255, 255, 255, .03);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 12px;
+            padding: 10px 10px;
+            outline: none;
+        }
+
+        select:focus,
+        button:focus {
+            border-color: rgba(141, 252, 255, .35);
+            box-shadow: 0 0 0 3px rgba(141, 252, 255, .10);
+        }
+
+        button {
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        button:hover {
+            border-color: rgba(255, 255, 255, .18);
+        }
+
+        button.primary {
+            border-color: rgba(141, 252, 255, .25);
+        }
+
+        button.primary:hover {
+            border-color: rgba(141, 252, 255, .45);
+        }
+
+        button.danger {
+            border-color: rgba(255, 107, 139, .25);
+        }
+
+        button.danger:hover {
+            border-color: rgba(255, 107, 139, .5);
+        }
+
+        .status {
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.35;
+        }
+
+        .status strong {
+            color: rgba(255, 255, 255, .85);
+            font-weight: 650;
+        }
+
+        .status .ok {
+            color: rgba(166, 255, 154, .9);
+        }
+
+        .status .bad {
+            color: rgba(255, 107, 139, .9);
+        }
+
+        /* 8 track visualization */
+        .tracks {
+            display: grid;
+            grid-template-columns: repeat(8, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .track {
+            background: linear-gradient(180deg, rgba(0, 0, 0, .18), rgba(0, 0, 0, .05));
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 10px 10px 12px;
+            min-height: 92px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .track .ch {
+            font-size: 11px;
+            color: var(--muted);
+            letter-spacing: .25px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .track .ch .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 99px;
+            background: rgba(255, 255, 255, .14);
+            box-shadow: none;
+        }
+
+        .track.active .ch .dot {
+            background: var(--accent);
+            box-shadow: 0 0 16px rgba(141, 252, 255, .22);
+        }
+
+        .track .note {
+            font-variant-numeric: tabular-nums;
+            font-size: 28px;
+            font-weight: 720;
+            letter-spacing: .5px;
+            color: rgba(255, 255, 255, .92);
+            min-height: 34px;
+            display: flex;
+            align-items: flex-end;
+        }
+
+        .track .note.empty {
+            color: rgba(255, 255, 255, .18);
+            font-weight: 650;
+        }
+
+        /* 2-column section */
+        .two {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        @media (max-width: 900px) {
+            .tracks {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 560px) {
+            .tracks {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .two {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Toggle switch */
+        .toggleRow {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+        }
+
+        .toggleWrap {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .toggleLabel {
+            font-size: 13px;
+            color: rgba(255, 255, 255, .82);
+            font-weight: 650;
+            letter-spacing: .25px;
+        }
+
+        .switch {
+            position: relative;
+            width: 56px;
+            height: 32px;
+            flex: 0 0 auto;
+        }
+
+        .switch input {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 56px;
+            height: 32px;
+            background: rgba(255, 255, 255, .05);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            outline: none;
+            cursor: pointer;
+            transition: background .15s, border-color .15s;
+        }
+
+        .switch input::before {
+            content: "";
+            position: absolute;
+            top: 5px;
+            left: 6px;
+            width: 22px;
+            height: 22px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .75);
+            transition: transform .18s ease, background .15s;
+            box-shadow: 0 8px 18px rgba(0, 0, 0, .35);
+        }
+
+        .switch input:checked {
+            background: rgba(141, 252, 255, .12);
+            border-color: rgba(141, 252, 255, .35);
+        }
+
+        .switch input:checked::before {
+            transform: translateX(22px);
+            background: var(--accent);
+            box-shadow: 0 0 18px rgba(141, 252, 255, .20), 0 8px 18px rgba(0, 0, 0, .35);
+        }
+
+        .smallActions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .smallActions button {
+            width: auto;
+            min-width: 160px;
+        }
+
+        hr.sep {
+            border: none;
+            border-top: 1px solid rgba(255, 255, 255, .06);
+            margin: 10px 0 0;
+        }
+    </style>
 </head>
+
 <body>
-	<div class="app">
-		<header>
-			<div>
-				<h1>M8 Web MIDI — 8-Track Scale Sender</h1>
-				<div class="subtitle">Pick an output device (M8), choose root + scale, toggle output to send notes on channels 1–8.</div>
-			</div>
-			<div class="subtitle" id="supportNote"></div>
-		</header>
+    <div class="app">
+        <header>
+            <div>
+                <h1>M8 Web MIDI — 8-Track Scale Sender</h1>
+                <div class="subtitle">Pick an output device (M8), choose root + scale, toggle output to send notes on
+                    channels 1–8.</div>
+            </div>
+            <div class="subtitle" id="supportNote"></div>
+        </header>
 
-		<!-- SECTION 1: MIDI Output Device -->
-		<section>
-			<div class="section-title">
-				<h2>1) MIDI Output Device</h2>
-				<div class="hint">You must grant MIDI access once per page load.</div>
-			</div>
+        <!-- SECTION 1: MIDI Output Device -->
+        <section>
+            <div class="section-title">
+                <h2>1) MIDI Output Device</h2>
+                <div class="hint">You must grant MIDI access once per page load.</div>
+            </div>
 
-			<div class="row" style="align-items:flex-end;">
-				<div style="flex:2 1 280px;">
-					<label for="outSelect">Output</label>
-					<select id="outSelect" disabled>
-						<option value="">(connect first)</option>
-					</select>
-				</div>
+            <div class="row" style="align-items:flex-end;">
+                <div style="flex:2 1 280px;">
+                    <label for="outSelect">Output</label>
+                    <select id="outSelect" disabled>
+                        <option value="">(connect first)</option>
+                    </select>
+                </div>
 
-				<div style="flex:1 1 220px;">
-					<label>&nbsp;</label>
-					<button id="btnConnect" class="primary">Connect MIDI</button>
-				</div>
+                <div style="flex:1 1 220px;">
+                    <label>&nbsp;</label>
+                    <button id="btnConnect" class="primary">Connect MIDI</button>
+                </div>
 
-				<div style="flex:1 1 220px;">
-					<label>&nbsp;</label>
-					<button id="btnPanic" class="danger" disabled>Panic (All Notes Off)</button>
-				</div>
-			</div>
+                <div style="flex:1 1 220px;">
+                    <label>&nbsp;</label>
+                    <button id="btnPanic" class="danger" disabled>Panic (All Notes Off)</button>
+                </div>
+            </div>
 
-			<div class="status" id="midiStatus">
-				<strong>Status:</strong> <span class="bad">Not connected.</span>
-			</div>
-		</section>
+            <div class="status" id="midiStatus">
+                <strong>Status:</strong> <span class="bad">Not connected.</span>
+            </div>
+        </section>
 
-		<!-- SECTION 2: 8 Track Visualization -->
-		<section>
-			<div class="section-title">
-				<h2>2) Track Visualization</h2>
-				<div class="hint">Shows the active MIDI note number per channel (1–8).</div>
-			</div>
+        <!-- SECTION 2: 8 Track Visualization -->
+        <section>
+            <div class="section-title">
+                <h2>2) Track Visualization</h2>
+                <div class="hint">Shows the active MIDI note number per channel (1–8).</div>
+            </div>
 
-			<div class="tracks" id="tracks"></div>
-		</section>
+            <div class="tracks" id="tracks"></div>
+        </section>
 
-		<!-- SECTION 3: Root + Scale -->
-		<section>
-			<div class="section-title">
-				<h2>3) Root Note + Scale</h2>
-				<div class="hint">Changing these while output is ON will update the notes.</div>
-			</div>
+        <!-- SECTION 3: Root + Scale -->
+        <section>
+            <div class="section-title">
+                <h2>3) Root Note + Scale</h2>
+                <div class="hint">Changing these while output is ON will update the notes.</div>
+            </div>
 
-			<div class="two">
-				<div>
-					<label for="rootSelect">Root note</label>
-					<select id="rootSelect" disabled></select>
-				</div>
-				<div>
-					<label for="scaleSelect">Scale / mode</label>
-					<select id="scaleSelect" disabled></select>
-				</div>
-			</div>
-		</section>
+            <div class="two">
+                <div>
+                    <label for="rootSelect">Root note</label>
+                    <select id="rootSelect" disabled></select>
+                </div>
+                <div>
+                    <label for="scaleSelect">Scale / mode</label>
+                    <select id="scaleSelect" disabled></select>
+                </div>
+            </div>
+        </section>
 
-		<!-- SECTION 4: Output Toggle -->
-		<section>
-			<div class="section-title">
-				<h2>4) Output</h2>
-				<div class="hint">Toggle ON sends 8 notes (one per channel). Toggle OFF sends Note Off.</div>
-			</div>
+        <!-- SECTION 4: Output Toggle -->
+        <section>
+            <div class="section-title">
+                <h2>4) Output</h2>
+                <div class="hint">Toggle ON sends 8 notes (one per channel). Toggle OFF sends Note Off.</div>
+            </div>
 
-			<div class="toggleRow">
-				<div class="toggleWrap">
-					<div class="switch">
-						<input id="outputToggle" type="checkbox" disabled />
-					</div>
-					<div class="toggleLabel" id="toggleLabel">Output OFF</div>
-				</div>
+            <div class="toggleRow">
+                <div class="toggleWrap">
+                    <div class="switch">
+                        <input id="outputToggle" type="checkbox" disabled />
+                    </div>
+                    <div class="toggleLabel" id="toggleLabel">Output OFF</div>
+                </div>
 
-				<div class="smallActions">
-					<button id="btnResend" disabled>Resend Notes</button>
-				</div>
-			</div>
+                <div class="smallActions">
+                    <button id="btnResend" disabled>Resend Notes</button>
+                </div>
+            </div>
 
-			<hr class="sep" />
-			<div class="status" id="notePlan">
-				<strong>Planned notes:</strong> —
-			</div>
-		</section>
-	</div>
+            <hr class="sep" />
+            <div class="status" id="notePlan">
+                <strong>Planned notes:</strong> —
+            </div>
+        </section>
+    </div>
 
-	<script>
+    <script>
 		// ----------------------------
 		// MIDI + Music helpers
 		// ----------------------------
@@ -783,6 +840,7 @@
 				setStatus(`<span class="bad">Web MIDI not supported.</span> Use Chrome/Edge, and run from https:// or localhost.`);
 			}
 		})();
-	</script>
+    </script>
 </body>
+
 </html>
