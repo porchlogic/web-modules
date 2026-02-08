@@ -72,6 +72,7 @@
             cursor: pointer;
             background: #333;
             color: #fff;
+            margin: 2px;
         }
 
         button.on {
@@ -113,7 +114,7 @@
         </div>
         <div>
             <label>
-                Threshold (Σ axes): <span id="thresholdLabel">10</span>
+                Threshold (Σ windowed): <span id="thresholdLabel">10</span>
             </label>
             <input id="thresholdSlider" type="range" min="1" max="100" step="1" value="10" />
         </div>
@@ -124,55 +125,59 @@
             <div class="bar" id="barX"></div>
             <div class="axis-label">X</div>
             <button id="toggleX" class="on">IN</button>
-            <div class="readout">Σx: <span id="sumX">0.00</span></div>
+            <button id="resetX">RESET</button>
+            <div class="readout">Σx (window): <span id="sumX">0.00</span></div>
+            <div class="readout">Σx (total): <span id="totalX">0.00</span></div>
         </div>
+
         <div class="axis">
             <div class="bar" id="barY"></div>
             <div class="axis-label">Y</div>
             <button id="toggleY" class="on">IN</button>
-            <div class="readout">Σy: <span id="sumY">0.00</span></div>
+            <button id="resetY">RESET</button>
+            <div class="readout">Σy (window): <span id="sumY">0.00</span></div>
+            <div class="readout">Σy (total): <span id="totalY">0.00</span></div>
         </div>
+
         <div class="axis">
             <div class="bar" id="barZ"></div>
             <div class="axis-label">Z</div>
             <button id="toggleZ" class="on">IN</button>
-            <div class="readout">Σz: <span id="sumZ">0.00</span></div>
+            <button id="resetZ">RESET</button>
+            <div class="readout">Σz (window): <span id="sumZ">0.00</span></div>
+            <div class="readout">Σz (total): <span id="totalZ">0.00</span></div>
         </div>
     </div>
 
     <div class="indicator" id="indicator"></div>
 
     <script>
+        const axes = ["x", "y", "z"];
+
         const bars = {
-            x: document.getElementById("barX"),
-            y: document.getElementById("barY"),
-            z: document.getElementById("barZ")
+            x: barX, y: barY, z: barZ
         };
 
-        const sumsUI = {
-            x: document.getElementById("sumX"),
-            y: document.getElementById("sumY"),
-            z: document.getElementById("sumZ")
+        const sumUI = {
+            x: sumX, y: sumY, z: sumZ
+        };
+
+        const totalUI = {
+            x: totalX, y: totalY, z: totalZ
         };
 
         const toggles = {
-            x: document.getElementById("toggleX"),
-            y: document.getElementById("toggleY"),
-            z: document.getElementById("toggleZ")
+            x: toggleX, y: toggleY, z: toggleZ
+        };
+
+        const resets = {
+            x: resetX, y: resetY, z: resetZ
         };
 
         const indicator = document.getElementById("indicator");
 
-        const windowSlider = document.getElementById("windowSlider");
-        const thresholdSlider = document.getElementById("thresholdSlider");
-        const windowLabel = document.getElementById("windowLabel");
-        const thresholdLabel = document.getElementById("thresholdLabel");
-
         let windowMs = parseInt(windowSlider.value, 10);
         let threshold = parseFloat(thresholdSlider.value);
-
-        windowLabel.textContent = windowMs;
-        thresholdLabel.textContent = threshold;
 
         windowSlider.oninput = () => {
             windowMs = parseInt(windowSlider.value, 10);
@@ -185,16 +190,21 @@
         };
 
         const axisEnabled = { x: true, y: true, z: true };
+        const totalSum = { x: 0, y: 0, z: 0 };
 
-        for (const axis of ["x", "y", "z"]) {
-            toggles[axis].onclick = () => {
-                axisEnabled[axis] = !axisEnabled[axis];
-                toggles[axis].classList.toggle("on", axisEnabled[axis]);
-                toggles[axis].textContent = axisEnabled[axis] ? "IN" : "OUT";
+        for (const a of axes) {
+            toggles[a].onclick = () => {
+                axisEnabled[a] = !axisEnabled[a];
+                toggles[a].classList.toggle("on", axisEnabled[a]);
+                toggles[a].textContent = axisEnabled[a] ? "IN" : "OUT";
+            };
+
+            resets[a].onclick = () => {
+                totalSum[a] = 0;
+                totalUI[a].textContent = "0.00";
             };
         }
 
-        // samples: { t, x, y, z }
         const samples = [];
 
         function pruneSamples(now) {
@@ -215,30 +225,34 @@
             if (!a) return;
 
             const now = performance.now();
-            samples.push({
+            const sample = {
                 t: now,
                 x: a.x || 0,
                 y: a.y || 0,
                 z: a.z || 0
-            });
+            };
 
+            samples.push(sample);
             pruneSamples(now);
 
-            let total = 0;
+            let totalWindowed = 0;
 
-            for (const axis of ["x", "y", "z"]) {
-                const sum = cumulative(axis);
-                sumsUI[axis].textContent = sum.toFixed(2);
+            for (const axis of axes) {
+                totalSum[axis] += sample[axis];
+                totalUI[axis].textContent = totalSum[axis].toFixed(2);
 
-                const vis = Math.min(Math.abs(sum / threshold), 1);
+                const winSum = cumulative(axis);
+                sumUI[axis].textContent = winSum.toFixed(2);
+
+                const vis = Math.min(Math.abs(winSum / threshold), 1);
                 bars[axis].style.transform = `scaleY(${vis})`;
 
                 if (axisEnabled[axis]) {
-                    total += sum;
+                    totalWindowed += winSum;
                 }
             }
 
-            if (Math.abs(total) > threshold) {
+            if (Math.abs(totalWindowed) > threshold) {
                 indicator.classList.add("on");
             } else {
                 indicator.classList.remove("on");
