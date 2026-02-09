@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-    <title>Motion → Forward Axis → Drone</title>
+    <title>Motion → Forward Axis → Drone (dt tuned)</title>
     <style>
         html,
         body {
@@ -80,6 +80,7 @@
             font-size: 12px;
             opacity: 0.9;
             font-variant-numeric: tabular-nums;
+            white-space: nowrap;
         }
 
         .controls {
@@ -144,6 +145,7 @@
                 <button id="audioBtn" disabled>Enable audio</button>
                 <button id="resetBtn" disabled>Reset dot</button>
                 <span class="pill" id="gatePill">Gate: —</span>
+                <span class="pill" id="ratioPill">|Δ|/thr: —</span>
                 <span class="pill" id="fwdPill">Forward: unset</span>
                 <span class="pill" id="notePill">Pitch: —</span>
             </div>
@@ -159,10 +161,11 @@
 
                 <div class="control">
                     <div class="topline">
-                        <div>Threshold (delta magnitude)</div>
-                        <div id="thrVal">1.50</div>
+                        <div>Threshold (Δv over window, m/s)</div>
+                        <div id="thrVal">0.40</div>
                     </div>
-                    <input id="thr" type="range" min="0.00" max="50.00" step="0.10" value="1.50" />
+                    <!-- New scale: threshold is now in m/s (delta of integrated accel over time window) -->
+                    <input id="thr" type="range" min="0.00" max="5.00" step="0.01" value="0.40" />
                 </div>
 
                 <div class="control">
@@ -170,36 +173,43 @@
                         <div>Pitch range (± semitones)</div>
                         <div id="prVal">12.0</div>
                     </div>
-                    <input id="pr" type="range" min="0" max="36" step="0.5" value="12" />
+                    <input id="pr" type="range" min="0" max="48" step="0.5" value="12" />
+                </div>
+
+                <div class="control">
+                    <div class="topline">
+                        <div>Pitch sensitivity (semitones per m/s)</div>
+                        <div id="psVal">6.0</div>
+                    </div>
+                    <!-- New: scale factor from dotT (m/s-ish) to semitone offset -->
+                    <input id="ps" type="range" min="0" max="24" step="0.1" value="6.0" />
                 </div>
             </div>
         </div>
 
         <div id="readout">
+            dt: <span id="dt">—</span>s<br />
             ax: <span id="ax">—</span><br />
             ay (inverted): <span id="ay">—</span><br />
-            Δx(window): <span id="dx">—</span><br />
-            Δy(window): <span id="dy">—</span><br />
-            |Δ|: <span id="dmag">—</span><br />
-            dotT: <span id="gt">0.000</span><br />
+            |Δ|: <span id="dmag">—</span> m/s<br />
+            dotT (≈v): <span id="gt">0.000</span> m/s<br />
             dotX: <span id="gx">0.000</span><br />
             dotY: <span id="gy">0.000</span>
         </div>
     </div>
 
     <div id="hint">
-        Drone is middle C at dotT=0 and pitch bends with dot position along the forward axis. Pitch range slider
-        controls maximum deviation.
+        With dt integration: |Δ| is roughly “change in velocity over the window” (m/s). dotT is roughly “forward
+        velocity estimate” (m/s). Tune threshold + sensitivity accordingly.
     </div>
 
     <script>
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
 
+        const dtEl = document.getElementById('dt');
         const axEl = document.getElementById('ax');
         const ayEl = document.getElementById('ay');
-        const dxEl = document.getElementById('dx');
-        const dyEl = document.getElementById('dy');
         const dmagEl = document.getElementById('dmag');
 
         const gtEl = document.getElementById('gt');
@@ -213,12 +223,15 @@
         const winSlider = document.getElementById('win');
         const thrSlider = document.getElementById('thr');
         const prSlider = document.getElementById('pr');
+        const psSlider = document.getElementById('ps');
 
         const winValEl = document.getElementById('winVal');
         const thrValEl = document.getElementById('thrVal');
         const prValEl = document.getElementById('prVal');
+        const psValEl = document.getElementById('psVal');
 
         const gatePill = document.getElementById('gatePill');
+        const ratioPill = document.getElementById('ratioPill');
         const fwdPill = document.getElementById('fwdPill');
         const notePill = document.getElementById('notePill');
 
@@ -226,11 +239,11 @@
         let ax = 0, ay = 0;
         let haveData = false;
 
-        // Always-accumulating raw cumulative for gating
+        // Always-accumulating raw cumulative for gating (integrates with dt)
         let rawCumX = 0, rawCumY = 0;
 
-        // Dot state locked to forward axis
-        let dotT = 0;
+        // Dot state locked to forward axis (integrates with dt)
+        let dotT = 0; // now closer to "velocity estimate" along forward axis
         let dotX = 0, dotY = 0;
 
         // Forward axis unit vector
@@ -240,14 +253,19 @@
         // History of raw cumulative: {t(ms), x, y}
         const hist = [];
 
+        // Timing
+        let lastMs = null;
+
         // Params
         let windowSec = parseFloat(winSlider.value);
-        let threshold = parseFloat(thrSlider.value);
-        let pitchRangeSemis = parseFloat(prSlider.value); // ± semitones
+        let threshold = parseFloat(thrSlider.value);      // now m/s-ish
+        let pitchRangeSemis = parseFloat(prSlider.value); // clamp
+        let pitchSens = parseFloat(psSlider.value);       // semis per (m/s)
 
         winValEl.textContent = windowSec.toFixed(2);
         thrValEl.textContent = threshold.toFixed(2);
         prValEl.textContent = pitchRangeSemis.toFixed(1);
+        psValEl.textContent = pitchSens.toFixed(1);
 
         winSlider.addEventListener('input', () => {
             windowSec = parseFloat(winSlider.value);
@@ -261,6 +279,10 @@
             pitchRangeSemis = parseFloat(prSlider.value);
             prValEl.textContent = pitchRangeSemis.toFixed(1);
         });
+        psSlider.addEventListener('input', () => {
+            pitchSens = parseFloat(psSlider.value);
+            psValEl.textContent = pitchSens.toFixed(1);
+        });
 
         function resize() {
             const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -272,7 +294,7 @@
         resize();
 
         // -----------------------
-        // Audio: "bite + texture"
+        // Audio: textured drone
         // -----------------------
         let audioCtx = null;
         let master = null;
@@ -285,10 +307,7 @@
         let startedAudio = false;
 
         const BASE_MIDI = 60;         // Middle C
-        const BASE_FREQ = 261.625565; // C4 Hz (approx)
-        // Map dotT -> pitch offset (in semitones) with only a scale factor (no smoothing).
-        // Higher value = more sensitive to movement.
-        const DOT_TO_SEMI_SCALE = 0.12; // semitones per dotT unit
+        const BASE_FREQ = 261.625565; // C4 Hz
 
         function midiToFreq(m) {
             return 440 * Math.pow(2, (m - 69) / 12);
@@ -303,7 +322,6 @@
             return buf;
         }
 
-        // Simple waveshaper drive curve (static)
         function makeDriveCurve(amount = 6) {
             const n = 2048;
             const curve = new Float32Array(n);
@@ -321,7 +339,7 @@
             master = audioCtx.createGain();
             master.gain.value = 0.25;
 
-            // Two detuned saws for richness
+            // Two detuned saws
             osc1 = audioCtx.createOscillator();
             osc2 = audioCtx.createOscillator();
             osc1.type = 'sawtooth';
@@ -332,7 +350,7 @@
             gain1.gain.value = 0.32;
             gain2.gain.value = 0.32;
 
-            // Noisy texture (high-passed) mixed in
+            // Noise texture
             const noiseBuf = makeNoiseBuffer(audioCtx, 2.0);
             noise = audioCtx.createBufferSource();
             noise.buffer = noiseBuf;
@@ -345,18 +363,16 @@
             noiseGain = audioCtx.createGain();
             noiseGain.gain.value = 0.05;
 
-            // Drive for bite
+            // Drive + lowpass
             drive = audioCtx.createWaveShaper();
             drive.curve = makeDriveCurve(5.5);
             drive.oversample = '4x';
 
-            // Lowpass after drive to keep it pleasant
             lp = audioCtx.createBiquadFilter();
             lp.type = 'lowpass';
             lp.frequency.value = 2200;
             lp.Q.value = 0.6;
 
-            // Routing: (osc mix + noise) -> drive -> lp -> master -> destination
             osc1.connect(gain1);
             osc2.connect(gain2);
             gain1.connect(drive);
@@ -370,11 +386,10 @@
             lp.connect(master);
             master.connect(audioCtx.destination);
 
-            // Start at middle C with slight detune
             osc1.frequency.value = BASE_FREQ;
             osc2.frequency.value = BASE_FREQ;
-            osc1.detune.value = -7; // cents
-            osc2.detune.value = +7; // cents
+            osc1.detune.value = -7;
+            osc2.detune.value = +7;
 
             osc1.start();
             osc2.start();
@@ -383,13 +398,16 @@
             startedAudio = true;
             audioBtn.textContent = 'Audio enabled';
             audioBtn.disabled = true;
+
+            updatePitchFromDot();
         }
 
         function updatePitchFromDot() {
             if (!startedAudio) return;
 
-            // Convert dotT to a semitone offset; clamp to slider-defined range.
-            let semiOffset = dotT * DOT_TO_SEMI_SCALE;
+            // dotT is ~m/s; pitchSens is semis per (m/s)
+            let semiOffset = dotT * pitchSens;
+
             if (semiOffset > pitchRangeSemis) semiOffset = pitchRangeSemis;
             if (semiOffset < -pitchRangeSemis) semiOffset = -pitchRangeSemis;
 
@@ -404,7 +422,7 @@
         }
 
         // -----------------------
-        // Motion + drawing
+        // Drawing
         // -----------------------
         function draw() {
             const w = window.innerWidth;
@@ -424,8 +442,8 @@
             ctx.stroke();
             ctx.globalAlpha = 1;
 
-            const pxPerMs2 = 30; // arrow scale
-            const pxPerDot = 4;  // dot scale
+            const pxPerMs2 = 30;  // arrow scale
+            const pxPerDot = 120; // dot now in m/s-ish, scale visually
 
             if (!haveData) {
                 ctx.fillStyle = 'rgba(255,255,255,0.75)';
@@ -433,7 +451,6 @@
                 ctx.textAlign = 'center';
                 ctx.fillText('No motion data yet', cx0, cy0 + 28);
             } else {
-                // Arrow (raw accel; Y already inverted)
                 const x2 = cx0 + ax * pxPerMs2;
                 const y2 = cy0 + ay * pxPerMs2;
 
@@ -456,7 +473,7 @@
                 ctx.fill();
             }
 
-            // Draw forward axis
+            // Forward axis
             if (forwardSet) {
                 ctx.globalAlpha = 0.35;
                 ctx.strokeStyle = '#ffd400';
@@ -468,7 +485,7 @@
                 ctx.globalAlpha = 1;
             }
 
-            // Yellow dot (locked)
+            // Dot
             const drawDotX = cx0 + dotX * pxPerDot;
             const drawDotY = cy0 + dotY * pxPerDot;
             ctx.fillStyle = '#ffd400';
@@ -495,23 +512,25 @@
                 haveData = false;
                 axEl.textContent = 'null';
                 ayEl.textContent = 'null';
-                dxEl.textContent = '—';
-                dyEl.textContent = '—';
                 dmagEl.textContent = '—';
                 gatePill.textContent = 'Gate: —';
+                ratioPill.textContent = '|Δ|/thr: —';
                 return;
             }
 
             const nowMs = performance.now();
+            const dt = (lastMs == null) ? 0 : (nowMs - lastMs) / 1000;
+            lastMs = nowMs;
+            dtEl.textContent = dt.toFixed(3);
 
-            // Raw accel, with Y inverted
+            // Raw accel, Y inverted
             ax = a.x;
             ay = -a.y;
             haveData = true;
 
-            // Raw cumulative (for gating)
-            rawCumX += ax;
-            rawCumY += ay;
+            // Integrate with dt (units become m/s-ish)
+            rawCumX += ax * dt;
+            rawCumY += ay * dt;
 
             hist.push({ t: nowMs, x: rawCumX, y: rawCumY });
 
@@ -522,33 +541,31 @@
 
             const dX = rawCumX - past.x;
             const dY = rawCumY - past.y;
-            const dMag = Math.hypot(dX, dY);
+            const dMag = Math.hypot(dX, dY); // now ~m/s over the window
 
             const gateOn = dMag > threshold;
+
+            gatePill.textContent = `Gate: ${gateOn ? 'ON' : 'off'}`;
+            ratioPill.textContent = `|Δ|/thr: ${threshold > 0 ? (dMag / threshold).toFixed(2) : '∞'}`;
 
             if (gateOn && !forwardSet) {
                 setForwardFromDelta(dX, dY);
             }
 
             if (gateOn && forwardSet) {
-                // Project accel onto forward axis -> scalar increment
                 const aProj = ax * fwdX + ay * fwdY;
-                dotT += aProj;
+                // dotT becomes ~m/s (forward velocity estimate)
+                dotT += aProj * dt;
                 dotX = dotT * fwdX;
                 dotY = dotT * fwdY;
             }
 
-            // Update audio pitch from dot position (dotT)
             updatePitchFromDot();
 
             // UI
             axEl.textContent = ax.toFixed(3);
             ayEl.textContent = ay.toFixed(3);
-            dxEl.textContent = dX.toFixed(3);
-            dyEl.textContent = dY.toFixed(3);
             dmagEl.textContent = dMag.toFixed(3);
-
-            gatePill.textContent = `Gate: ${gateOn ? 'ON' : 'off'}`;
 
             gtEl.textContent = dotT.toFixed(3);
             gxEl.textContent = dotX.toFixed(3);
@@ -576,7 +593,6 @@
             });
         });
 
-        // Audio must be enabled from a user gesture on iOS
         audioBtn.addEventListener('click', () => {
             enableAudio().catch(err => {
                 console.error(err);
@@ -584,22 +600,20 @@
             });
         });
 
-        // Reset dot + forward axis. Raw cumulative for gating continues.
         resetBtn.addEventListener('click', () => {
-            dotT = 0;
-            dotX = 0;
-            dotY = 0;
+            dotT = 0; dotX = 0; dotY = 0;
 
             forwardSet = false;
-            fwdX = 0;
-            fwdY = 0;
+            fwdX = 0; fwdY = 0;
             fwdPill.textContent = 'Forward: unset';
+
+            // Also reset timing so the next event doesn't get a huge dt spike after pauses
+            lastMs = null;
 
             gtEl.textContent = dotT.toFixed(3);
             gxEl.textContent = dotX.toFixed(3);
             gyEl.textContent = dotY.toFixed(3);
 
-            // Pitch returns to middle C
             notePill.textContent = 'Pitch: —';
             updatePitchFromDot();
         });
