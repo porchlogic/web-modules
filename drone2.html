@@ -1,0 +1,315 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MIDI Meander (Mobile)</title>
+<style>
+	body {
+		margin:0;
+		background:#0b0b12;
+		color:#eee;
+		font-family:system-ui;
+	}
+	.section {
+		padding:18px;
+		border-bottom:1px solid #222;
+	}
+	h2 {
+		margin:0 0 12px 0;
+		font-size:16px;
+		color:#aaa;
+	}
+	button, select, input {
+		width:100%;
+		padding:14px;
+		border-radius:10px;
+		border:1px solid #333;
+		background:#141424;
+		color:#fff;
+		font-size:16px;
+	}
+	button { cursor:pointer; }
+	button.active { background:#2a2a55; }
+	.row { margin-top:10px; }
+	.status { font-size:14px; color:#aaa; }
+</style>
+</head>
+<body>
+
+<div class="section">
+	<button id="initBtn">Init MIDI</button>
+	<div class="row">
+		<select id="midiOut"></select>
+	</div>
+</div>
+
+<div class="section">
+	<h2>Scale</h2>
+	<select id="root"></select>
+	<div class="row">
+		<select id="scale"></select>
+	</div>
+</div>
+
+<div class="section">
+	<h2>Rate of Change (ms)</h2>
+	<input id="rate" type="number" value="900" min="50">
+</div>
+
+<div class="section">
+	<h2>Fade Length (ms)</h2>
+	<input id="fade" type="number" value="300" min="0">
+</div>
+
+<div class="section">
+	<h2>Center Note</h2>
+	<select id="center"></select>
+</div>
+
+<div class="section">
+	<h2>Span (semitones)</h2>
+	<input id="span" type="number" value="24">
+</div>
+
+<div class="section">
+	<h2>Max Step (degrees)</h2>
+	<input id="stepMax" type="number" value="2">
+</div>
+
+<div class="section">
+	<h2>Velocity</h2>
+	<input id="vel" type="range" min="1" max="127" value="96">
+</div>
+
+<div class="section">
+	<h2>Voice 1</h2>
+	<button id="mute1">Mute Voice 1</button>
+</div>
+
+<div class="section">
+	<h2>Voice 2</h2>
+	<button id="mute2">Mute Voice 2</button>
+</div>
+
+<div class="section">
+	<button id="startBtn">Start</button>
+	<div class="row">
+		<button id="stopBtn">Stop</button>
+	</div>
+	<div class="row status" id="status">Idle</div>
+</div>
+
+<script>
+let midiAccess, midiOut;
+const status = document.getElementById("status");
+
+function clamp(v,l,h){return Math.max(l,Math.min(h,v));}
+
+function noteOn(ch,n,v){ midiOut?.send([0x90|(ch-1),n,v]); }
+function noteOff(ch,n){ midiOut?.send([0x80|(ch-1),n,0]); }
+function cc(ch,num,val){ midiOut?.send([0xB0|(ch-1),num,val]); }
+
+const CC_EXPR = 11;
+
+class ABVoice {
+	constructor(chA,chB){
+		this.chA=chA;
+		this.chB=chB;
+		this.noteA=null;
+		this.noteB=null;
+		this.active="A";
+		this.muted=false;
+	}
+	start(note,vel){
+		this.noteA=note;
+		this.active="A";
+		cc(this.chA,CC_EXPR,127);
+		cc(this.chB,CC_EXPR,0);
+		noteOn(this.chA,note,vel);
+	}
+	stop(){
+		if(this.noteA!==null) noteOff(this.chA,this.noteA);
+		if(this.noteB!==null) noteOff(this.chB,this.noteB);
+		this.noteA=null;
+		this.noteB=null;
+	}
+	crossfade(note,vel,fade){
+		if(this.muted) return;
+
+		let from=this.active;
+		let to = from==="A"?"B":"A";
+		let fromCh = from==="A"?this.chA:this.chB;
+		let toCh = to==="A"?this.chA:this.chB;
+
+		let currentNote = from==="A"?this.noteA:this.noteB;
+		if(currentNote===note) return;
+
+		if(to==="A"){ this.noteA=note; } else { this.noteB=note; }
+		cc(toCh,CC_EXPR,0);
+		noteOn(toCh,note,vel);
+
+		const start=performance.now();
+		const end=start+fade;
+
+		const step=(t)=>{
+			let ratio=clamp((t-start)/fade,0,1);
+			let a=Math.round(127*(1-ratio));
+			let b=Math.round(127*ratio);
+
+			if(from==="A"){
+				cc(this.chA,CC_EXPR,a);
+				cc(this.chB,CC_EXPR,b);
+			}else{
+				cc(this.chB,CC_EXPR,a);
+				cc(this.chA,CC_EXPR,b);
+			}
+
+			if(t<end){
+				requestAnimationFrame(step);
+			}else{
+				// ONLY turn off after fully faded
+				if(from==="A"){
+					cc(this.chA,CC_EXPR,0);
+					if(this.noteA!==null) noteOff(this.chA,this.noteA);
+					this.noteA=null;
+				}else{
+					cc(this.chB,CC_EXPR,0);
+					if(this.noteB!==null) noteOff(this.chB,this.noteB);
+					this.noteB=null;
+				}
+				this.active=to;
+			}
+		};
+		if(fade>0) requestAnimationFrame(step);
+		else{
+			cc(fromCh,CC_EXPR,0);
+			noteOff(fromCh,currentNote);
+			cc(toCh,CC_EXPR,127);
+			this.active=to;
+		}
+	}
+}
+
+const voice1=new ABVoice(1,2);
+const voice2=new ABVoice(3,4);
+
+document.getElementById("mute1").onclick=()=>{
+	voice1.muted=!voice1.muted;
+	event.target.classList.toggle("active");
+};
+document.getElementById("mute2").onclick=()=>{
+	voice2.muted=!voice2.muted;
+	event.target.classList.toggle("active");
+};
+
+const NOTES=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const SCALES={
+	"Major":[0,2,4,5,7,9,11],
+	"Minor":[0,2,3,5,7,8,10],
+	"Pentatonic":[0,3,5,7,10]
+};
+
+function buildScale(){
+	let root=parseInt(rootSel.value);
+	let scale=SCALES[scaleSel.value];
+	let center=parseInt(centerSel.value);
+	let span=parseInt(spanInput.value);
+	let lo=center-span;
+	let hi=center+span;
+	let arr=[];
+	for(let n=0;n<128;n++){
+		if(n>=lo&&n<=hi){
+			let rel=(n%12-root+12)%12;
+			if(scale.includes(rel)) arr.push(n);
+		}
+	}
+	return arr;
+}
+
+let allowed=[],idx1=0,idx2=0,loop;
+function tick(){
+	let rate=parseInt(rateInput.value);
+	let fade=parseInt(fadeInput.value);
+	let step=parseInt(stepInput.value);
+	let vel=parseInt(velInput.value);
+
+	idx1=clamp(idx1+(Math.random()<.5?-1:1)*Math.ceil(Math.random()*step),0,allowed.length-1);
+	idx2=clamp(idx2+(Math.random()<.5?-1:1)*Math.ceil(Math.random()*step),0,allowed.length-1);
+
+	voice1.crossfade(allowed[idx1],vel,fade);
+	voice2.crossfade(allowed[idx2],vel,fade);
+
+	loop=setTimeout(tick,rate);
+}
+
+document.getElementById("startBtn").onclick=()=>{
+	allowed=buildScale();
+	idx1=Math.floor(allowed.length/2);
+	idx2=Math.floor(allowed.length/3);
+	let vel=parseInt(velInput.value);
+	voice1.start(allowed[idx1],vel);
+	voice2.start(allowed[idx2],vel);
+	status.textContent="Running";
+	tick();
+};
+
+document.getElementById("stopBtn").onclick=()=>{
+	clearTimeout(loop);
+	voice1.stop();
+	voice2.stop();
+	status.textContent="Stopped";
+};
+
+document.getElementById("initBtn").onclick=async()=>{
+	if(!navigator.requestMIDIAccess){
+		status.textContent="Web MIDI not supported";
+		return;
+	}
+	midiAccess=await navigator.requestMIDIAccess();
+	let outs=[...midiAccess.outputs.values()];
+	midiSel.innerHTML="";
+	outs.forEach(o=>{
+		let opt=document.createElement("option");
+		opt.value=o.id;
+		opt.textContent=o.name;
+		midiSel.appendChild(opt);
+	});
+	midiSel.onchange=()=>midiOut=midiAccess.outputs.get(midiSel.value);
+	midiOut=outs[0];
+	status.textContent="MIDI Ready";
+};
+
+const rootSel=document.getElementById("root");
+NOTES.forEach((n,i)=>{
+	let o=document.createElement("option");
+	o.value=i;
+	o.textContent=n;
+	rootSel.appendChild(o);
+});
+
+const scaleSel=document.getElementById("scale");
+Object.keys(SCALES).forEach(s=>{
+	let o=document.createElement("option");
+	o.textContent=s;
+	scaleSel.appendChild(o);
+});
+
+const centerSel=document.getElementById("center");
+for(let i=36;i<96;i++){
+	let o=document.createElement("option");
+	o.value=i;
+	o.textContent=i;
+	centerSel.appendChild(o);
+}
+centerSel.value=60;
+
+const rateInput=document.getElementById("rate");
+const fadeInput=document.getElementById("fade");
+const spanInput=document.getElementById("span");
+const stepInput=document.getElementById("stepMax");
+const velInput=document.getElementById("vel");
+const midiSel=document.getElementById("midiOut");
+</script>
+</body>
+</html>
