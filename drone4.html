@@ -1,0 +1,249 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MIDI Meander</title>
+<style>
+body {
+	margin:0;
+	background:#0b0b12;
+	color:#eee;
+	font-family:system-ui;
+}
+.navbar {
+	display:flex;
+	justify-content:space-between;
+	align-items:center;
+	padding:14px 18px;
+	background:#111120;
+	border-bottom:1px solid #222;
+	font-size:20px;
+}
+.navbtn { cursor:pointer; user-select:none; }
+
+.section {
+	padding:18px;
+	border-bottom:1px solid #222;
+}
+h2 {
+	margin:0 0 12px 0;
+	font-size:15px;
+	color:#aaa;
+}
+input[type=range] {
+	width:100%;
+}
+label {
+	font-size:13px;
+	color:#888;
+	display:block;
+	margin-bottom:6px;
+}
+button {
+	width:100%;
+	padding:14px;
+	border-radius:10px;
+	border:1px solid #333;
+	background:#141424;
+	color:#fff;
+	font-size:16px;
+	margin-top:10px;
+}
+.status { font-size:14px; color:#aaa; }
+</style>
+</head>
+<body>
+
+<div class="navbar">
+	<div class="navbtn" id="navLeft">⬅</div>
+	<div>MIDI Meander</div>
+	<div class="navbtn" id="navRight">➡</div>
+</div>
+
+<div class="section">
+	<button id="initBtn">Init MIDI</button>
+	<select id="midiOut" style="width:100%; margin-top:10px;"></select>
+</div>
+
+<div class="section">
+	<h2>Fade Time (ms)</h2>
+	<input id="fade" type="range" min="0" max="1000" value="250">
+</div>
+
+<div class="section">
+	<h2>Voice 1 Change Interval (ms)</h2>
+	<input id="rate1" type="range" min="200" max="3000" value="900">
+</div>
+
+<div class="section">
+	<h2>Voice 2 Change Interval (ms)</h2>
+	<input id="rate2" type="range" min="200" max="3000" value="1200">
+</div>
+
+<div class="section">
+	<h2>Velocity</h2>
+	<input id="vel" type="range" min="1" max="127" value="96">
+</div>
+
+<div class="section">
+	<button id="startBtn">Start</button>
+	<button id="stopBtn">Stop</button>
+	<div class="status" id="status">Idle</div>
+</div>
+
+<script>
+let midiAccess, midiOut;
+const status = document.getElementById("status");
+
+function noteOn(ch,n,v){ midiOut?.send([0x90|(ch-1),n,v]); }
+function noteOff(ch,n){ midiOut?.send([0x80|(ch-1),n,0]); }
+function cc(ch,num,val){ midiOut?.send([0xB0|(ch-1),num,val]); }
+
+const CC_EXPR = 11;
+function clamp(v,l,h){return Math.max(l,Math.min(h,v));}
+
+class StructuredVoice {
+	constructor(chA,chB,rateSlider){
+		this.chA=chA;
+		this.chB=chB;
+		this.rateSlider=rateSlider;
+		this.active="A";
+		this.noteA=null;
+		this.noteB=null;
+		this.timer=null;
+	}
+
+	start(note,vel){
+		this.active="A";
+		this.noteA=note;
+
+		cc(this.chA,CC_EXPR,0);
+		noteOn(this.chA,note,vel);
+
+		this.fadeUp(this.chA,0,127,parseInt(fadeSlider.value));
+		this.schedule();
+	}
+
+	schedule(){
+		clearTimeout(this.timer);
+		this.timer=setTimeout(()=>this.transition(),parseInt(this.rateSlider.value));
+	}
+
+	transition(){
+		const fade=parseInt(fadeSlider.value);
+		const vel=parseInt(velSlider.value);
+
+		const from=this.active;
+		const to = from==="A"?"B":"A";
+		const fromCh = from==="A"?this.chA:this.chB;
+		const toCh = to==="A"?this.chA:this.chB;
+
+		const newNote = 60 + Math.floor(Math.random()*12);
+
+		if(to==="A") this.noteA=newNote;
+		else this.noteB=newNote;
+
+		cc(toCh,CC_EXPR,0);
+		noteOn(toCh,newNote,vel);
+
+		this.crossfade(fromCh,toCh,fade,()=>{
+			if(from==="A"){
+				noteOff(this.chA,this.noteA);
+			}else{
+				noteOff(this.chB,this.noteB);
+			}
+			this.active=to;
+			this.schedule();
+		});
+	}
+
+	fadeUp(ch,from,to,duration){
+		const start=performance.now();
+		const end=start+duration;
+		const step=(t)=>{
+			let r=clamp((t-start)/duration,0,1);
+			let val=Math.round(from+(to-from)*r);
+			cc(ch,CC_EXPR,val);
+			if(t<end) requestAnimationFrame(step);
+		};
+		requestAnimationFrame(step);
+	}
+
+	crossfade(fromCh,toCh,duration,done){
+		const start=performance.now();
+		const end=start+duration;
+		const step=(t)=>{
+			let r=clamp((t-start)/duration,0,1);
+			cc(fromCh,CC_EXPR,Math.round(127*(1-r)));
+			cc(toCh,CC_EXPR,Math.round(127*r));
+			if(t<end){
+				requestAnimationFrame(step);
+			}else{
+				cc(fromCh,CC_EXPR,0);
+				done();
+			}
+		};
+		requestAnimationFrame(step);
+	}
+
+	stop(){
+		clearTimeout(this.timer);
+		if(this.noteA!==null) noteOff(this.chA,this.noteA);
+		if(this.noteB!==null) noteOff(this.chB,this.noteB);
+	}
+}
+
+const fadeSlider=document.getElementById("fade");
+const velSlider=document.getElementById("vel");
+
+const voice1=new StructuredVoice(1,2,document.getElementById("rate1"));
+const voice2=new StructuredVoice(3,4,document.getElementById("rate2"));
+
+document.getElementById("startBtn").onclick=()=>{
+	let vel=parseInt(velSlider.value);
+	voice1.start(60,vel);
+	voice2.start(67,vel);
+	status.textContent="Running";
+};
+document.getElementById("stopBtn").onclick=()=>{
+	voice1.stop();
+	voice2.stop();
+	status.textContent="Stopped";
+};
+
+// NAV
+function adjustUrl(delta){
+	const match=window.location.pathname.match(/(\d+)(?!.*\d)/);
+	if(!match) return;
+	const num=parseInt(match[1]);
+	const newNum=num+delta;
+	const newPath=window.location.pathname.replace(/(\d+)(?!.*\d)/,newNum);
+	window.location.href=newPath;
+}
+document.getElementById("navLeft").onclick=()=>adjustUrl(-1);
+document.getElementById("navRight").onclick=()=>adjustUrl(1);
+
+// MIDI INIT
+document.getElementById("initBtn").onclick=async()=>{
+	if(!navigator.requestMIDIAccess){
+		status.textContent="Web MIDI unsupported";
+		return;
+	}
+	midiAccess=await navigator.requestMIDIAccess();
+	let outs=[...midiAccess.outputs.values()];
+	let sel=document.getElementById("midiOut");
+	sel.innerHTML="";
+	outs.forEach(o=>{
+		let opt=document.createElement("option");
+		opt.value=o.id;
+		opt.textContent=o.name;
+		sel.appendChild(opt);
+	});
+	sel.onchange=()=>midiOut=midiAccess.outputs.get(sel.value);
+	midiOut=outs[0];
+	status.textContent="MIDI Ready";
+};
+</script>
+</body>
+    </html>
