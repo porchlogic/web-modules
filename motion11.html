@@ -331,7 +331,7 @@
 
 		<div class="slider">
 			<label>
-				<span>Gravity low-pass alpha (higher = more stable gravity, less tilt response)</span>
+				<span>Gravity low-pass alpha</span>
 				<input id="alpha" type="range" min="0.80" max="0.995" step="0.001" value="0.94" />
 			</label>
 			<input id="alphaNum" type="number" min="0.80" max="0.995" step="0.001" value="0.94" />
@@ -339,7 +339,7 @@
 
 		<div class="slider">
 			<label>
-				<span>Idle threshold (m/s²) (below this feels “still”)</span>
+				<span>Idle threshold (m/s²)</span>
 				<input id="idleTh" type="range" min="0.02" max="1.50" step="0.01" value="0.15" />
 			</label>
 			<input id="idleThNum" type="number" min="0.02" max="5" step="0.01" value="0.15" />
@@ -353,12 +353,48 @@
 			<input id="energyScaleNum" type="number" min="0.1" max="20" step="0.05" value="2.2" />
 		</div>
 
+		<div class="hr"></div>
+
+		<h3 style="margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.2px;">Speed tuning</h3>
+
 		<div class="slider">
 			<label>
-				<span>Speed decay (seconds) (shorter = snaps to 0 faster)</span>
-				<input id="speedTau" type="range" min="0.2" max="8.0" step="0.05" value="1.0" />
+				<span>Speed decay τ (s) (lower = returns to 0 faster)</span>
+				<input id="speedTau" type="range" min="0.10" max="8.0" step="0.05" value="1.0" />
 			</label>
-			<input id="speedTauNum" type="number" min="0.1" max="20" step="0.05" value="1.0" />
+			<input id="speedTauNum" type="number" min="0.05" max="20" step="0.05" value="1.0" />
+		</div>
+
+		<div class="slider">
+			<label>
+				<span>Speed HP alpha (DC blocker) (higher = removes slower drift)</span>
+				<input id="speedHp" type="range" min="0.80" max="0.995" step="0.001" value="0.96" />
+			</label>
+			<input id="speedHpNum" type="number" min="0.80" max="0.995" step="0.001" value="0.96" />
+		</div>
+
+		<div class="slider">
+			<label>
+				<span>Speed deadzone scale (× idle threshold)</span>
+				<input id="speedDz" type="range" min="0.00" max="1.50" step="0.01" value="0.25" />
+			</label>
+			<input id="speedDzNum" type="number" min="0.00" max="3.00" step="0.01" value="0.25" />
+		</div>
+
+		<div class="slider">
+			<label>
+				<span>Speed idle snap threshold (idleConf > X)</span>
+				<input id="speedIdleConf" type="range" min="0.50" max="0.99" step="0.01" value="0.92" />
+			</label>
+			<input id="speedIdleConfNum" type="number" min="0.0" max="1.0" step="0.01" value="0.92" />
+		</div>
+
+		<div class="slider">
+			<label>
+				<span>Speed idle snap τ (s) (lower = harder snap)</span>
+				<input id="speedSnapTau" type="range" min="0.03" max="1.50" step="0.01" value="0.12" />
+			</label>
+			<input id="speedSnapTauNum" type="number" min="0.01" max="5" step="0.01" value="0.12" />
 		</div>
 
 		<div class="slider">
@@ -371,7 +407,19 @@
 
 		<div class="slider">
 			<label>
-				<span>Drift decay (seconds) (shorter = “stronger decay”)</span>
+				<span>Speed clamp (arb units)</span>
+				<input id="speedClamp" type="range" min="1" max="80" step="1" value="30" />
+			</label>
+			<input id="speedClampNum" type="number" min="1" max="500" step="1" value="30" />
+		</div>
+
+		<div class="hr"></div>
+
+		<h3 style="margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.2px;">Other tuning</h3>
+
+		<div class="slider">
+			<label>
+				<span>Drift decay τ (s) (expressive drift)</span>
 				<input id="driftTau" type="range" min="0.2" max="8.0" step="0.05" value="1.6" />
 			</label>
 			<input id="driftTauNum" type="number" min="0.1" max="20" step="0.05" value="1.6" />
@@ -379,7 +427,7 @@
 
 		<div class="slider">
 			<label>
-				<span>Beat band (Hz) (used by beat likelihood)</span>
+				<span>Beat band (Hz)</span>
 				<div class="row" style="gap:8px;">
 					<input id="beatMin" type="number" min="0.1" max="10" step="0.05" value="0.7" />
 					<span class="small">to</span>
@@ -391,18 +439,12 @@
 
 		<div class="hr"></div>
 
-		<h3 style="margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.2px;">Higher-level metrics</h3>
+		<h3 style="margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.2px;">Debug</h3>
 		<div class="grid2">
-			<div class="kv"><div class="k">LinAcc |a| (m/s²)</div><div class="v" id="linMag">0</div></div>
-			<div class="kv"><div class="k">Jerk std (for smoothness)</div><div class="v" id="jerkStd">0</div></div>
-			<div class="kv"><div class="k">Autocorr lag (samples)</div><div class="v" id="acLag">0</div></div>
+			<div class="kv"><div class="k">LinAcc |a|</div><div class="v" id="linMag">0</div></div>
+			<div class="kv"><div class="k">Jerk std</div><div class="v" id="jerkStd">0</div></div>
+			<div class="kv"><div class="k">Autocorr lag</div><div class="v" id="acLag">0</div></div>
 			<div class="kv"><div class="k">Autocorr peak</div><div class="v" id="acPeak">0</div></div>
-		</div>
-
-		<div class="hr"></div>
-
-		<h3 style="margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.2px;">Interpretation helpers</h3>
-		<div class="grid2">
 			<div class="kv"><div class="k">Motion state</div><div class="v" id="motionState">—</div></div>
 			<div class="kv"><div class="k">Energy gate</div><div class="v" id="energyGate">0</div></div>
 		</div>
@@ -467,23 +509,6 @@
 	const statusEl = el("status");
 	const hzEl = el("hz");
 
-	const alphaR = el("alpha");
-	const alphaN = el("alphaNum");
-	const idleR = el("idleTh");
-	const idleN = el("idleThNum");
-	const energyScaleR = el("energyScale");
-	const energyScaleN = el("energyScaleNum");
-	const driftTauR = el("driftTau");
-	const driftTauN = el("driftTauNum");
-
-	const speedTauR = el("speedTau");
-	const speedTauN = el("speedTauNum");
-	const speedScaleR = el("speedScale");
-	const speedScaleN = el("speedScaleNum");
-
-	const beatMinN = el("beatMin");
-	const beatMaxN = el("beatMax");
-
 	function linkRangeNumber(rangeEl, numEl, onChange){
 		const syncFromRange = () => {
 			numEl.value = rangeEl.value;
@@ -503,36 +528,51 @@
 		idleThreshold: 0.15,
 		energyScale: 2.2,
 
-		// speed feel: leaky integration of accel XY with gating
+		// Speed feel
 		speedTau: 1.0,
+		speedHpAlpha: 0.96,
+		speedDeadzoneMul: 0.25,
+		speedIdleConf: 0.92,
+		speedSnapTau: 0.12,
 		speedScale: 2.6,
-		speedClamp: 30.0, // arbitrary units clamp to prevent runaway drift
+		speedClamp: 30.0,
 
+		// Drift feel
 		driftTau: 1.6,
+
+		// Beat band
 		beatHzMin: 0.7,
 		beatHzMax: 2.5
 	};
 
-	linkRangeNumber(alphaR, alphaN, () => params.gravityAlpha = clamp(parseFloat(alphaN.value), 0.80, 0.995));
-	linkRangeNumber(idleR, idleN, () => params.idleThreshold = Math.max(0.0, parseFloat(idleN.value)));
-	linkRangeNumber(energyScaleR, energyScaleN, () => params.energyScale = Math.max(0.0001, parseFloat(energyScaleN.value)));
-	linkRangeNumber(speedTauR, speedTauN, () => params.speedTau = Math.max(0.05, parseFloat(speedTauN.value)));
-	linkRangeNumber(speedScaleR, speedScaleN, () => params.speedScale = Math.max(0.0001, parseFloat(speedScaleN.value)));
-	linkRangeNumber(driftTauR, driftTauN, () => params.driftTau = Math.max(0.05, parseFloat(driftTauN.value)));
+	// Sliders
+	linkRangeNumber(el("alpha"), el("alphaNum"), () => params.gravityAlpha = clamp(parseFloat(el("alphaNum").value), 0.80, 0.995));
+	linkRangeNumber(el("idleTh"), el("idleThNum"), () => params.idleThreshold = Math.max(0.0, parseFloat(el("idleThNum").value)));
+	linkRangeNumber(el("energyScale"), el("energyScaleNum"), () => params.energyScale = Math.max(0.0001, parseFloat(el("energyScaleNum").value)));
+
+	linkRangeNumber(el("speedTau"), el("speedTauNum"), () => params.speedTau = Math.max(0.05, parseFloat(el("speedTauNum").value)));
+	linkRangeNumber(el("speedHp"), el("speedHpNum"), () => params.speedHpAlpha = clamp(parseFloat(el("speedHpNum").value), 0.80, 0.995));
+	linkRangeNumber(el("speedDz"), el("speedDzNum"), () => params.speedDeadzoneMul = Math.max(0.0, parseFloat(el("speedDzNum").value)));
+	linkRangeNumber(el("speedIdleConf"), el("speedIdleConfNum"), () => params.speedIdleConf = clamp(parseFloat(el("speedIdleConfNum").value), 0.0, 1.0));
+	linkRangeNumber(el("speedSnapTau"), el("speedSnapTauNum"), () => params.speedSnapTau = Math.max(0.01, parseFloat(el("speedSnapTauNum").value)));
+	linkRangeNumber(el("speedScale"), el("speedScaleNum"), () => params.speedScale = Math.max(0.0001, parseFloat(el("speedScaleNum").value)));
+	linkRangeNumber(el("speedClamp"), el("speedClampNum"), () => params.speedClamp = Math.max(0.1, parseFloat(el("speedClampNum").value)));
+
+	linkRangeNumber(el("driftTau"), el("driftTauNum"), () => params.driftTau = Math.max(0.05, parseFloat(el("driftTauNum").value)));
 
 	function syncBeatBand(){
-		let a = parseFloat(beatMinN.value);
-		let b = parseFloat(beatMaxN.value);
+		let a = parseFloat(el("beatMin").value);
+		let b = parseFloat(el("beatMax").value);
 		if (!Number.isFinite(a)) a = 0.7;
 		if (!Number.isFinite(b)) b = 2.5;
 		if (a > b) [a,b] = [b,a];
 		params.beatHzMin = clamp(a, 0.05, 10);
 		params.beatHzMax = clamp(b, 0.05, 10);
-		beatMinN.value = params.beatHzMin;
-		beatMaxN.value = params.beatHzMax;
+		el("beatMin").value = params.beatHzMin;
+		el("beatMax").value = params.beatHzMax;
 	}
-	beatMinN.addEventListener("input", syncBeatBand);
-	beatMaxN.addEventListener("input", syncBeatBand);
+	el("beatMin").addEventListener("input", syncBeatBand);
+	el("beatMax").addEventListener("input", syncBeatBand);
 	syncBeatBand();
 
 	// Feature UI
@@ -585,29 +625,24 @@
 	let lastEventMs = 0;
 	let hzSmoothed = 0;
 
-	// Most recent raw readings
 	let aInc = {x:0,y:0,z:0};
 	let aLin = {x:0,y:0,z:0};
 	let rot = {a:0,b:0,g:0};
 	let ori = {a:0,b:0,g:0};
 
-	// Gravity estimate (low-pass)
 	let gEst = {x:0,y:0,z:0};
 	let haveGInit = false;
 
-	// Drift (expressive vector)
 	let drift = {x:0, y:0};
 
-	// Speed estimate (assumed flat orientation)
-	// Convention: +Y (device) = forward (top edge), +X (device) = right edge
-	let velRF = {r:0, f:0}; // right/forward pseudo-velocity (arbitrary units)
+	// Speed estimate
+	let velRF = {r:0, f:0};			// pseudo velocity vector
+	let accLP_RF = {r:0, f:0};		// low-pass accel (for DC blocker / high-pass)
 
-	// Rolling sample buffers
 	const WIN_ENERGY_MS = 1000;
 	const WIN_PERIOD_MS = 1800;
 
-	// store: {t, ax, ay, az, mag, jerk, rmag}
-	let samples = [];
+	let samples = []; // {t, ax, ay, az, mag, jerk, rmag}
 
 	let prevMag = 0;
 	let prevMagT = 0;
@@ -626,8 +661,7 @@
 		const w1 = samples.filter(s => s.t >= now - WIN_ENERGY_MS);
 		const wP = samples.filter(s => s.t >= now - WIN_PERIOD_MS);
 
-		let linMag = 0;
-		if (samples.length) linMag = samples[samples.length - 1].mag;
+		let linMag = samples.length ? samples[samples.length - 1].mag : 0;
 
 		const mags1 = w1.map(s => s.mag);
 		const energyRms = rms(mags1);
@@ -656,11 +690,11 @@
 			else domAxis = "Z";
 		}
 
-		// Rotation intensity: RMS of rotation magnitude over 1s
+		// Rotation intensity RMS over 1s
 		const r1 = w1.map(s => s.rmag);
 		const rotRms = rms(r1);
 
-		// Periodicity: autocorrelation peak in beat band lags
+		// Periodicity via autocorr
 		let periodicityScore = 0;
 		let periodicityHz = 0;
 		let acLag = 0;
@@ -720,11 +754,10 @@
 		const eN = clamp(energyRms / (params.idleThreshold * 3.5 + 1e-6), 0, 2);
 		const jN = clamp(jerkMeanAbs / (params.idleThreshold * 14.0 + 1e-6), 0, 2);
 		const rN = clamp(rotRms / 140.0, 0, 2);
-
 		const activity = clamp(0.52*eN + 0.33*jN + 0.15*rN, 0, 2);
 		const idleConfidence = clamp(1 - soft01(clamp(activity/1.2, 0, 1)), 0, 1);
 
-		// Expressive drift (XY): integrate with strong decay (NOT position)
+		// Expressive drift XY
 		if (samples.length >= 2){
 			const s0 = samples[samples.length - 2];
 			const s1 = samples[samples.length - 1];
@@ -741,16 +774,10 @@
 		}
 
 		// ---------------------------------------
-		// Speed estimate (responsive “feel”)
-		// Assumption: phone flat face up
-		// +Y = forward (top edge), +X = right
-		//
-		// Method:
-		// - leaky integrate accel XY -> vel (arb units)
-		// - deadzone accel near idle (kills bias)
-		// - extra damping when idleConfidence is high
+		// Speed estimate (shake-resistant)
+		// - DC-block accel (high-pass) before integration
+		// - leaky integrator + idle snap-to-zero
 		// ---------------------------------------
-		let speed = 0;
 		let speedR = velRF.r;
 		let speedF = velRF.f;
 
@@ -759,35 +786,54 @@
 			const s1 = samples[samples.length - 1];
 			const dt = Math.max(1e-3, (s1.t - s0.t) / 1000);
 
+			// velocity decay
 			const tau = Math.max(0.05, params.speedTau);
 			const decay = Math.exp(-dt / tau);
-
-			// small accel deadzone tied to idle threshold
-			const dz = params.idleThreshold * 0.35;
-
-			let aR = (Math.abs(s1.ax) < dz) ? 0 : s1.ax;
-			let aF = (Math.abs(s1.ay) < dz) ? 0 : s1.ay;
-
-			// gating: when idleConfidence is high, reduce integration gain + add stronger damping
-			const gain = lerp(0.10, 1.00, 1 - idleConfidence);
-
 			speedR *= decay;
 			speedF *= decay;
 
+			// DC blocker: low-pass accel, subtract it => high-pass accel
+			const hpA = clamp(params.speedHpAlpha, 0.80, 0.995);
+			accLP_RF.r = hpA * accLP_RF.r + (1 - hpA) * s1.ax;
+			accLP_RF.f = hpA * accLP_RF.f + (1 - hpA) * s1.ay;
+
+			let aR = s1.ax - accLP_RF.r;
+			let aF = s1.ay - accLP_RF.f;
+
+			// symmetric deadband that preserves sign
+			const dz = Math.max(0, params.idleThreshold * params.speedDeadzoneMul);
+			const deadband = (x) => {
+				const ax = Math.abs(x);
+				if (ax <= dz) return 0;
+				return Math.sign(x) * (ax - dz);
+			};
+			aR = deadband(aR);
+			aF = deadband(aF);
+
+			// gating
+			const gain = lerp(0.05, 1.00, 1 - idleConfidence);
 			speedR += aR * dt * gain;
 			speedF += aF * dt * gain;
 
-			// snap toward 0 when very idle (kills drift quickly)
-			if (idleConfidence > 0.9){
-				const snap = Math.exp(-dt / 0.18);
+			// idle snap
+			if (idleConfidence > params.speedIdleConf){
+				const snapTau = Math.max(0.01, params.speedSnapTau);
+				const snap = Math.exp(-dt / snapTau);
 				speedR *= snap;
 				speedF *= snap;
+
+				// optional hard snap when already tiny
+				if (Math.hypot(speedR, speedF) < params.speedScale * 0.03){
+					speedR = 0;
+					speedF = 0;
+				}
 			}
 
-			// clamp (prevents runaway if sensor bias leaks through)
+			// clamp
 			const sMag = Math.hypot(speedR, speedF);
-			if (sMag > params.speedClamp){
-				const k = params.speedClamp / (sMag + 1e-9);
+			const clampMag = Math.max(0.1, params.speedClamp);
+			if (sMag > clampMag){
+				const k = clampMag / (sMag + 1e-9);
 				speedR *= k;
 				speedF *= k;
 			}
@@ -796,9 +842,9 @@
 			velRF.f = speedF;
 		}
 
-		speed = Math.hypot(speedR, speedF);
+		const speed = Math.hypot(speedR, speedF);
 
-		// Motion state label
+		// Motion state
 		let motionState = "unknown";
 		if (!samples.length) motionState = "no data";
 		else if (idleConfidence > 0.8 && speed < params.speedScale * 0.08) motionState = "idle";
@@ -833,12 +879,7 @@
 	// ---------------------------
 	// Visualization
 	// ---------------------------
-	const plot = {
-		max: 280,
-		lin: [],
-		energy: [],
-		beat: []
-	};
+	const plot = { max: 280, lin: [], energy: [], beat: [] };
 
 	function pushPlot(linMag, energy, beat){
 		plot.lin.push(linMag);
@@ -854,10 +895,8 @@
 	function drawScope(){
 		const w = canvas.width;
 		const h = canvas.height;
-
 		ctx.clearRect(0,0,w,h);
 
-		ctx.globalAlpha = 1;
 		ctx.strokeStyle = "#20263a";
 		ctx.lineWidth = 1;
 		for (let i=1;i<6;i++){
@@ -971,13 +1010,7 @@
 
 		const rmag = vec3mag(rot.a, rot.b, rot.g);
 
-		samples.push({
-			t,
-			ax: lin.x, ay: lin.y, az: lin.z,
-			mag,
-			jerk,
-			rmag
-		});
+		samples.push({ t, ax: lin.x, ay: lin.y, az: lin.z, mag, jerk, rmag });
 	}
 
 	function onDeviceOrientation(e){
@@ -995,7 +1028,6 @@
 		const t = nowMs();
 		const f = computeFeatures(t);
 
-		// Numbers
 		linMagEl.textContent = fmt(f.linMag, 3);
 		rotIntensityEl.textContent = fmt(f.rotRms, 2);
 		dominantAxisEl.textContent = f.domAxis;
@@ -1012,7 +1044,6 @@
 		motionStateEl.textContent = f.motionState;
 		energyGateEl.textContent = fmt(f.energyGate, 3);
 
-		// Bars
 		const spNorm = clamp(f.speed / params.speedScale, 0, 1);
 		const eNorm = clamp(f.energyRms / params.energyScale, 0, 1);
 		const jNorm = clamp(f.jerkMeanAbs / (params.idleThreshold * 18.0 + 1e-6), 0, 1);
@@ -1037,13 +1068,11 @@
 		numBeat.textContent = fmt(f.beatLikelihood, 3);
 		numIdle.textContent = fmt(f.idleConfidence, 3);
 
-		// Raw readouts
 		rawAIGEl.textContent = `${fmt(aInc.x,2)}, ${fmt(aInc.y,2)}, ${fmt(aInc.z,2)}`;
 		rawLAEl.textContent = `${fmt(aLin.x,2)}, ${fmt(aLin.y,2)}, ${fmt(aLin.z,2)}`;
 		rawRREl.textContent = `${fmt(rot.a,2)}, ${fmt(rot.b,2)}, ${fmt(rot.g,2)}`;
 		rawOriEl.textContent = `${fmt(ori.a,1)}, ${fmt(ori.b,1)}, ${fmt(ori.g,1)}`;
 
-		// Plot history
 		pushPlot(f.linMag, f.energyRms, f.beatLikelihood);
 		drawScope();
 
@@ -1080,8 +1109,12 @@
 		samples = [];
 		prevMag = 0;
 		prevMagT = 0;
+
 		drift.x = 0; drift.y = 0;
+
 		velRF.r = 0; velRF.f = 0;
+		accLP_RF.r = 0; accLP_RF.f = 0;
+
 		haveGInit = false;
 		hzSmoothed = 0;
 		lastEventMs = 0;
@@ -1093,7 +1126,6 @@
 
 	async function start(){
 		if (running) return;
-
 		if (!("DeviceMotionEvent" in window)){
 			setStatus("DeviceMotionEvent not supported");
 			return;
@@ -1135,6 +1167,7 @@
 	btnStart.addEventListener("click", start);
 	btnStop.addEventListener("click", stop);
 
+	// Canvas DPR sizing
 	function resizeCanvas(){
 		const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
 		const rect = canvas.getBoundingClientRect();
