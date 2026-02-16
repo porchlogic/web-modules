@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+	<title>Motion Detector (r1 / v1)</title>
+	<style>
+		:root{
+			color-scheme: dark;
+			--bg:#070A10;
+			--panel:#0E1422CC;
+			--line:#2A3550;
+			--text:#E7ECFF;
+			--muted:#AAB4D6;
+			--blue:#3AA0FF;
+			--arrow:#B9C7FF;
+		}
+		html,body{height:100%;margin:0;background:var(--bg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);overflow:hidden;}
+		canvas{position:fixed;inset:0;width:100%;height:100%;display:block;}
+		#ui{
+			position:fixed; left:12px; right:12px; bottom:12px;
+			background:var(--panel); border:1px solid rgba(255,255,255,0.08);
+			backdrop-filter: blur(10px);
+			border-radius:14px; padding:12px 12px 10px;
+			max-width:720px; margin:0 auto;
+		}
+		.row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+		.row + .row{margin-top:10px;}
+		button{
+			background:#1B2A44; color:var(--text);
+			border:1px solid rgba(255,255,255,0.12);
+			padding:10px 12px; border-radius:12px;
+			cursor:pointer; font-weight:600;
+		}
+		button:active{transform:translateY(1px);}
+		.badge{
+			padding:6px 10px; border-radius:999px;
+			border:1px solid rgba(255,255,255,0.10);
+			color:var(--muted); font-size:12px;
+		}
+		.grid{
+			display:grid;
+			grid-template-columns: 1fr 1fr;
+			gap:10px 12px;
+			width:100%;
+		}
+		.ctrl{
+			display:flex; flex-direction:column; gap:6px;
+			border:1px solid rgba(255,255,255,0.08);
+			border-radius:12px; padding:10px;
+			background:rgba(0,0,0,0.14);
+		}
+		.ctrl label{font-size:12px;color:var(--muted); display:flex; justify-content:space-between; gap:10px;}
+		.ctrl input[type="range"]{width:100%;}
+		.ctrl .val{font-variant-numeric: tabular-nums; color:var(--text);}
+		.small{font-size:12px;color:var(--muted); line-height:1.25;}
+		.kv{
+			display:flex; gap:12px; flex-wrap:wrap;
+			font-variant-numeric: tabular-nums;
+		}
+		.kv div{color:var(--muted); font-size:12px;}
+		.kv b{color:var(--text); font-weight:700;}
+	</style>
+</head>
+<body>
+	<canvas id="c"></canvas>
+
+	<div id="ui">
+		<div class="row">
+			<button id="btn">Enable Motion</button>
+			<span class="badge" id="status">idle</span>
+			<span class="badge">Assume: phone flat, face up, top edge forward</span>
+		</div>
+
+		<div class="row">
+			<div class="grid">
+				<div class="ctrl">
+					<label>
+						<span>t1 (r1 magnitude threshold)</span>
+						<span class="val" id="t1v"></span>
+					</label>
+					<input id="t1" type="range" min="0.02" max="2.5" step="0.01" value="0.25">
+					<div class="small">If |r1| &lt; t1: v1 holds. If |r1| ≥ t1: v1 accumulates.</div>
+				</div>
+
+				<div class="ctrl">
+					<label>
+						<span>t2 (v1 reset threshold)</span>
+						<span class="val" id="t2v"></span>
+					</label>
+					<input id="t2" type="range" min="0.00" max="4.0" step="0.01" value="0.20">
+					<div class="small">If |v1| &lt; t2 AND |r1| &lt; t1: v1 resets to 0.</div>
+				</div>
+
+				<div class="ctrl">
+					<label>
+						<span>Window (ms) for r1</span>
+						<span class="val" id="winv"></span>
+					</label>
+					<input id="win" type="range" min="50" max="750" step="10" value="250">
+					<div class="small">r1 = Σ(linearAccel · dt) over this window.</div>
+				</div>
+
+				<div class="ctrl">
+					<label>
+						<span>Gravity LPF (alpha)</span>
+						<span class="val" id="gav"></span>
+					</label>
+					<input id="ga" type="range" min="0.01" max="0.30" step="0.01" value="0.10">
+					<div class="small">Higher alpha tracks gravity faster (can leak motion).</div>
+				</div>
+
+				<div class="ctrl">
+					<label>
+						<span>v1 accumulate gain</span>
+						<span class="val" id="gainv"></span>
+					</label>
+					<input id="gain" type="range" min="0.10" max="3.00" step="0.05" value="1.00">
+					<div class="small">v1 += r1 · gain when |r1| ≥ t1.</div>
+				</div>
+
+				<div class="ctrl">
+					<label>
+						<span>Screen scale</span>
+						<span class="val" id="scalev"></span>
+					</label>
+					<input id="scale" type="range" min="10" max="260" step="1" value="90">
+					<div class="small">Pixels per (m/s) for both arrow (r1) and dot (v1).</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="row kv" id="readout"></div>
+	</div>
+
+<script>
+(() => {
+	// ---------- Canvas ----------
+	const canvas = document.getElementById('c');
+	const ctx = canvas.getContext('2d', { alpha: false });
+
+	function resize() {
+		const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+		canvas.width = Math.floor(window.innerWidth * dpr);
+		canvas.height = Math.floor(window.innerHeight * dpr);
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+	}
+	window.addEventListener('resize', resize, { passive: true });
+	resize();
+
+	// ---------- UI controls ----------
+	const el = (id) => document.getElementById(id);
+	const ui = {
+		btn: el('btn'),
+		status: el('status'),
+		t1: el('t1'), t1v: el('t1v'),
+		t2: el('t2'), t2v: el('t2v'),
+		win: el('win'), winv: el('winv'),
+		ga: el('ga'), gav: el('gav'),
+		gain: el('gain'), gainv: el('gainv'),
+		scale: el('scale'), scalev: el('scalev'),
+		readout: el('readout'),
+	};
+
+	const params = {
+		t1: parseFloat(ui.t1.value),
+		t2: parseFloat(ui.t2.value),
+		winMs: parseFloat(ui.win.value),
+		gravAlpha: parseFloat(ui.ga.value),
+		gain: parseFloat(ui.gain.value),
+		scale: parseFloat(ui.scale.value),
+	};
+
+	function bindRange(input, onChange) {
+		const handler = () => onChange(parseFloat(input.value));
+		input.addEventListener('input', handler, { passive: true });
+		handler();
+	}
+
+	bindRange(ui.t1, (v) => { params.t1 = v; ui.t1v.textContent = v.toFixed(2); });
+	bindRange(ui.t2, (v) => { params.t2 = v; ui.t2v.textContent = v.toFixed(2); });
+	bindRange(ui.win, (v) => { params.winMs = v; ui.winv.textContent = `${Math.round(v)} ms`; });
+	bindRange(ui.ga, (v) => { params.gravAlpha = v; ui.gav.textContent = v.toFixed(2); });
+	bindRange(ui.gain, (v) => { params.gain = v; ui.gainv.textContent = v.toFixed(2); });
+	bindRange(ui.scale, (v) => { params.scale = v; ui.scalev.textContent = `${Math.round(v)} px`; });
+
+	// ---------- State ----------
+	let running = false;
+
+	// Gravity estimate (LPF of accelIncludingGravity)
+	let g = { x: 0, y: 0, z: 0 };
+	let gInit = false;
+
+	// r1 window buffer of linear accel * dt contributions
+	let buf = []; // {t, dx, dy, dz} where d? = linA? * dtSeconds
+	let sum = { x: 0, y: 0, z: 0 }; // sums of d? over window (≈ delta-velocity)
+	let lastT = null;
+
+	// v1: selective accumulator
+	let v1 = { x: 0, y: 0, z: 0 };
+
+	// Latest r1 for drawing
+	let r1 = { x: 0, y: 0, z: 0 };
+	let r1Mag = 0;
+	let v1Mag = 0;
+
+	function mag3(a){ return Math.hypot(a.x, a.y, a.z); }
+
+	function pushWindowContribution(nowMs, dx, dy, dz) {
+		buf.push({ t: nowMs, dx, dy, dz });
+		sum.x += dx; sum.y += dy; sum.z += dz;
+
+		const cutoff = nowMs - params.winMs;
+		while (buf.length && buf[0].t < cutoff) {
+			const s = buf.shift();
+			sum.x -= s.dx; sum.y -= s.dy; sum.z -= s.dz;
+		}
+	}
+
+	function onMotion(e) {
+		// Use accelIncludingGravity, subtract estimated gravity.
+		const aInc = e.accelerationIncludingGravity;
+		if (!aInc) return;
+
+		const nowMs = performance.now();
+		let dt = 0;
+		if (lastT != null) dt = (nowMs - lastT) / 1000;
+		lastT = nowMs;
+
+		// Ignore obviously-bad dt spikes.
+		if (dt <= 0 || dt > 0.2) return;
+
+		const ax = aInc.x ?? 0;
+		const ay = aInc.y ?? 0;
+		const az = aInc.z ?? 0;
+
+		if (!gInit) {
+			g.x = ax; g.y = ay; g.z = az;
+			gInit = true;
+		} else {
+			const a = params.gravAlpha;
+			g.x = g.x + a * (ax - g.x);
+			g.y = g.y + a * (ay - g.y);
+			g.z = g.z + a * (az - g.z);
+		}
+
+		const lin = {
+			x: ax - g.x,
+			y: ay - g.y,
+			z: az - g.z,
+		};
+
+		// Contribution to "accumulated vector over last window":
+		// r1 = Σ(linAccel * dt)  => approx delta-velocity over the window
+		pushWindowContribution(nowMs, lin.x * dt, lin.y * dt, lin.z * dt);
+
+		r1.x = sum.x; r1.y = sum.y; r1.z = sum.z;
+		r1Mag = mag3(r1);
+
+		// Selective accumulation logic:
+		// while |r1| < t1: v1 doesn't change
+		// if |r1| >= t1: v1 accumulates
+		if (r1Mag >= params.t1) {
+			v1.x += r1.x * params.gain;
+			v1.y += r1.y * params.gain;
+			v1.z += r1.z * params.gain;
+		}
+
+		v1Mag = mag3(v1);
+
+		// if |v1| < t2 AND |r1| < t1: reset v1
+		if (v1Mag < params.t2 && r1Mag < params.t1) {
+			v1.x = 0; v1.y = 0; v1.z = 0;
+			v1Mag = 0;
+		}
+	}
+
+	async function enableMotion() {
+		if (running) return;
+
+		// iOS permission gate
+		if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+			const res = await DeviceMotionEvent.requestPermission();
+			if (res !== 'granted') throw new Error('Motion permission not granted');
+		}
+
+		window.addEventListener('devicemotion', onMotion, { passive: true });
+		running = true;
+		ui.status.textContent = 'running';
+	}
+
+	ui.btn.addEventListener('click', async () => {
+		try {
+			ui.status.textContent = 'enabling...';
+			await enableMotion();
+		} catch (err) {
+			ui.status.textContent = 'blocked';
+			console.warn(err);
+		}
+	});
+
+	// ---------- Drawing ----------
+	function drawCrosshair(cx, cy) {
+		ctx.lineWidth = 1;
+		ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+		ctx.beginPath();
+		ctx.moveTo(cx - 24, cy); ctx.lineTo(cx + 24, cy);
+		ctx.moveTo(cx, cy - 24); ctx.lineTo(cx, cy + 24);
+		ctx.stroke();
+
+		ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+		ctx.beginPath();
+		ctx.moveTo(0, cy); ctx.lineTo(window.innerWidth, cy);
+		ctx.moveTo(cx, 0); ctx.lineTo(cx, window.innerHeight);
+		ctx.stroke();
+	}
+
+	function drawArrow(cx, cy, vx, vy) {
+		// faint arrow from center representing r1 XY
+		const x2 = cx + vx;
+		const y2 = cy + vy;
+
+		ctx.lineWidth = 2;
+		ctx.strokeStyle = 'rgba(185,199,255,0.25)';
+		ctx.beginPath();
+		ctx.moveTo(cx, cy);
+		ctx.lineTo(x2, y2);
+		ctx.stroke();
+
+		// arrowhead
+		const ang = Math.atan2(y2 - cy, x2 - cx);
+		const headLen = 10;
+		const a1 = ang + Math.PI * 0.85;
+		const a2 = ang - Math.PI * 0.85;
+
+		ctx.beginPath();
+		ctx.moveTo(x2, y2);
+		ctx.lineTo(x2 + Math.cos(a1) * headLen, y2 + Math.sin(a1) * headLen);
+		ctx.moveTo(x2, y2);
+		ctx.lineTo(x2 + Math.cos(a2) * headLen, y2 + Math.sin(a2) * headLen);
+		ctx.stroke();
+	}
+
+	function drawDot(x, y) {
+		ctx.save();
+		ctx.shadowColor = 'rgba(58,160,255,0.55)';
+		ctx.shadowBlur = 14;
+		ctx.fillStyle = 'rgba(58,160,255,0.95)';
+		ctx.beginPath();
+		ctx.arc(x, y, 9, 0, Math.PI * 2);
+		ctx.fill();
+
+		ctx.shadowBlur = 0;
+		ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+		ctx.lineWidth = 2;
+		ctx.stroke();
+		ctx.restore();
+	}
+
+	function loop() {
+		// background
+		ctx.fillStyle = '#070A10';
+		ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+		const cx = window.innerWidth / 2;
+		const cy = window.innerHeight / 2;
+
+		drawCrosshair(cx, cy);
+
+		// Map device axes -> screen:
+		// device x (right) -> +screen x
+		// device y (top) -> -screen y (canvas y grows downward)
+		const s = params.scale;
+
+		const r1x = (r1.x) * s;
+		const r1y = (-r1.y) * s;
+
+		const v1x = (v1.x) * s;
+		const v1y = (-v1.y) * s;
+
+		// Arrow is "faint"; dot is "blue"
+		drawArrow(cx, cy, r1x, r1y);
+		drawDot(cx + v1x, cy + v1y);
+
+		// readout
+		ui.readout.innerHTML =
+			`<div>r1Mag: <b>${r1Mag.toFixed(3)}</b></div>` +
+			`<div>v1Mag: <b>${v1Mag.toFixed(3)}</b></div>` +
+			`<div>r1XY: <b>${r1.x.toFixed(3)}, ${r1.y.toFixed(3)}</b></div>` +
+			`<div>v1XY: <b>${v1.x.toFixed(3)}, ${v1.y.toFixed(3)}</b></div>` +
+			`<div>window: <b>${Math.round(params.winMs)}ms</b></div>` +
+			`<div>state: <b>${(r1Mag >= params.t1) ? 'accumulating' : 'holding'}</b></div>`;
+
+		requestAnimationFrame(loop);
+	}
+	requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
