@@ -73,12 +73,12 @@ button {
 
 <div class="section">
 	<h2>Voice 1 Change Interval (ms)</h2>
-	<input id="rate1" type="range" min="200" max="3000" value="900">
+	<input id="rate1" type="range" min="50" max="10000" value="900">
 </div>
 
 <div class="section">
 	<h2>Voice 2 Change Interval (ms)</h2>
-	<input id="rate2" type="range" min="200" max="3000" value="1200">
+	<input id="rate2" type="range" min="50" max="10000" value="1200">
 </div>
 
 <div class="section">
@@ -96,9 +96,178 @@ button {
 let midiAccess, midiOut;
 const status = document.getElementById("status");
 
-function noteOn(ch,n,v){ midiOut?.send([0x90|(ch-1),n,v]); }
-function noteOff(ch,n){ midiOut?.send([0x80|(ch-1),n,0]); }
-function cc(ch,num,val){ midiOut?.send([0xB0|(ch-1),num,val]); }
+class DroneSynth {
+	constructor(){
+		this.ctx=null;
+		this.master=null;
+		this.reverb=null;
+		this.channelExpr=new Map();
+		this.channelGains=new Map();
+		this.notes=new Map();
+	}
+
+	ensureReady(){
+		if(!this.ctx){
+			this.ctx=new (window.AudioContext||window.webkitAudioContext)();
+
+			this.master=this.ctx.createGain();
+			this.master.gain.value=0.45;
+
+			const reverbSend=this.ctx.createGain();
+			reverbSend.gain.value=0.3;
+
+			this.reverb=this.ctx.createConvolver();
+			this.reverb.buffer=this.createImpulse(2.6,2.1);
+
+			const wet=this.ctx.createGain();
+			wet.gain.value=0.35;
+
+			this.master.connect(this.ctx.destination);
+			this.master.connect(reverbSend);
+			reverbSend.connect(this.reverb);
+			this.reverb.connect(wet);
+			wet.connect(this.ctx.destination);
+		}
+
+		if(this.ctx.state==="suspended") this.ctx.resume();
+	}
+
+	createImpulse(seconds,decay){
+		const len=Math.floor(this.ctx.sampleRate*seconds);
+		const impulse=this.ctx.createBuffer(2,len,this.ctx.sampleRate);
+		for(let c=0;c<2;c++){
+			const data=impulse.getChannelData(c);
+			for(let i=0;i<len;i++){
+				const t=i/len;
+				data[i]=(Math.random()*2-1)*Math.pow(1-t,decay);
+			}
+		}
+		return impulse;
+	}
+
+	getChannelGain(ch){
+		if(!this.channelGains.has(ch)){
+			const g=this.ctx.createGain();
+			g.gain.value=0;
+			g.connect(this.master);
+			this.channelGains.set(ch,g);
+			this.channelExpr.set(ch,0);
+		}
+		return this.channelGains.get(ch);
+	}
+
+	noteToFreq(note){
+		return 440*Math.pow(2,(note-69)/12);
+	}
+
+	noteOn(ch,n,v){
+		if(!this.ctx) return;
+		const now=this.ctx.currentTime;
+		const channelGain=this.getChannelGain(ch);
+		const freq=this.noteToFreq(n);
+		const vel=clamp(v/127,0,1);
+
+		const noteGain=this.ctx.createGain();
+		noteGain.gain.setValueAtTime(0.0001,now);
+		noteGain.gain.exponentialRampToValueAtTime(0.22*vel+0.04,now+0.08);
+
+		const lp=this.ctx.createBiquadFilter();
+		lp.type="lowpass";
+		lp.frequency.setValueAtTime(900,now);
+		lp.Q.value=0.7;
+
+		const hp=this.ctx.createBiquadFilter();
+		hp.type="highpass";
+		hp.frequency.value=45;
+
+		const oscA=this.ctx.createOscillator();
+		oscA.type="sawtooth";
+		oscA.frequency.setValueAtTime(freq,now);
+
+		const oscB=this.ctx.createOscillator();
+		oscB.type="triangle";
+		oscB.frequency.setValueAtTime(freq*1.003,now);
+
+		const oscC=this.ctx.createOscillator();
+		oscC.type="sine";
+		oscC.frequency.setValueAtTime(freq*0.5,now);
+
+		const mixA=this.ctx.createGain();
+		mixA.gain.value=0.6;
+		const mixB=this.ctx.createGain();
+		mixB.gain.value=0.45;
+		const mixC=this.ctx.createGain();
+		mixC.gain.value=0.2;
+
+		const lfo=this.ctx.createOscillator();
+		lfo.type="sine";
+		lfo.frequency.setValueAtTime(0.15+Math.random()*0.08,now);
+		const lfoAmt=this.ctx.createGain();
+		lfoAmt.gain.value=220;
+
+		oscA.connect(mixA).connect(lp);
+		oscB.connect(mixB).connect(lp);
+		oscC.connect(mixC).connect(lp);
+		lp.connect(hp).connect(noteGain).connect(channelGain);
+
+		lfo.connect(lfoAmt).connect(lp.frequency);
+
+		oscA.start(now);
+		oscB.start(now);
+		oscC.start(now);
+		lfo.start(now);
+
+		this.notes.set(`${ch}:${n}`,{oscA,oscB,oscC,lfo,noteGain,mixA,mixB,mixC,lp,hp});
+	}
+
+	noteOff(ch,n){
+		if(!this.ctx) return;
+		const voice=this.notes.get(`${ch}:${n}`);
+		if(!voice) return;
+		const now=this.ctx.currentTime;
+		voice.noteGain.gain.cancelScheduledValues(now);
+		voice.noteGain.gain.setValueAtTime(Math.max(voice.noteGain.gain.value,0.0001),now);
+		voice.noteGain.gain.exponentialRampToValueAtTime(0.0001,now+0.35);
+		[voice.oscA,voice.oscB,voice.oscC,voice.lfo].forEach(o=>o.stop(now+0.38));
+		setTimeout(()=>{
+			[voice.oscA,voice.oscB,voice.oscC,voice.lfo,voice.mixA,voice.mixB,voice.mixC,voice.lp,voice.hp,voice.noteGain]
+				.forEach(n=>n.disconnect());
+		},500);
+		this.notes.delete(`${ch}:${n}`);
+	}
+
+	setExpression(ch,val){
+		if(!this.ctx) return;
+		const now=this.ctx.currentTime;
+		const gain=this.getChannelGain(ch);
+		const next=clamp(val/127,0,1);
+		gain.gain.cancelScheduledValues(now);
+		gain.gain.setTargetAtTime(next*0.9,now,0.05);
+		this.channelExpr.set(ch,val);
+	}
+
+	stopAll(){
+		for(const key of [...this.notes.keys()]){
+			const [ch,n]=key.split(":").map(v=>parseInt(v,10));
+			this.noteOff(ch,n);
+		}
+	}
+}
+
+const droneSynth=new DroneSynth();
+
+function noteOn(ch,n,v){
+	midiOut?.send([0x90|(ch-1),n,v]);
+	droneSynth.noteOn(ch,n,v);
+}
+function noteOff(ch,n){
+	midiOut?.send([0x80|(ch-1),n,0]);
+	droneSynth.noteOff(ch,n);
+}
+function cc(ch,num,val){
+	midiOut?.send([0xB0|(ch-1),num,val]);
+	if(num===CC_EXPR) droneSynth.setExpression(ch,val);
+}
 
 const CC_EXPR = 11;
 function clamp(v,l,h){return Math.max(l,Math.min(h,v));}
@@ -201,6 +370,7 @@ const voice1=new StructuredVoice(1,2,document.getElementById("rate1"));
 const voice2=new StructuredVoice(3,4,document.getElementById("rate2"));
 
 document.getElementById("startBtn").onclick=()=>{
+	droneSynth.ensureReady();
 	let vel=parseInt(velSlider.value);
 	voice1.start(60,vel);
 	voice2.start(67,vel);
@@ -209,6 +379,7 @@ document.getElementById("startBtn").onclick=()=>{
 document.getElementById("stopBtn").onclick=()=>{
 	voice1.stop();
 	voice2.stop();
+	droneSynth.stopAll();
 	status.textContent="Stopped";
 };
 
