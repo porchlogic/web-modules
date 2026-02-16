@@ -1,0 +1,1155 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+	<title>Motion Feature Engine (Web)</title>
+	<style>
+		:root{
+			--bg:#0b0c10;
+			--panel:#12141b;
+			--muted:#8b93a7;
+			--text:#e7ebf5;
+			--good:#44d17a;
+			--warn:#f2c94c;
+			--bad:#ff5c7a;
+			--line:#242a3a;
+		}
+		*{box-sizing:border-box}
+		body{
+			margin:0;
+			font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+			background:var(--bg);
+			color:var(--text);
+		}
+		header{
+			padding:14px 14px 10px;
+			border-bottom:1px solid var(--line);
+			position:sticky;
+			top:0;
+			background:linear-gradient(to bottom, rgba(11,12,16,.96), rgba(11,12,16,.86));
+			backdrop-filter: blur(10px);
+			z-index:10;
+		}
+		.title{
+			display:flex;
+			align-items:center;
+			gap:10px;
+			flex-wrap:wrap;
+		}
+		.title h1{
+			font-size:16px;
+			margin:0;
+			font-weight:650;
+			letter-spacing:.2px;
+		}
+		.badge{
+			font-size:12px;
+			padding:3px 8px;
+			border:1px solid var(--line);
+			border-radius:999px;
+			color:var(--muted);
+		}
+		.wrap{
+			display:grid;
+			grid-template-columns: 1.15fr .85fr;
+			gap:12px;
+			padding:12px;
+			max-width:1200px;
+			margin:0 auto;
+		}
+		@media (max-width: 980px){
+			.wrap{grid-template-columns:1fr}
+		}
+		.card{
+			background:var(--panel);
+			border:1px solid var(--line);
+			border-radius:14px;
+			padding:12px;
+		}
+		.row{
+			display:flex;
+			gap:10px;
+			flex-wrap:wrap;
+			align-items:center;
+		}
+		button{
+			background:#1f6feb;
+			color:white;
+			border:0;
+			padding:10px 12px;
+			border-radius:10px;
+			font-weight:650;
+			cursor:pointer;
+		}
+		button.secondary{
+			background:#1b2030;
+			border:1px solid var(--line);
+			color:var(--text);
+		}
+		button:disabled{
+			opacity:.55;
+			cursor:not-allowed;
+		}
+		.small{
+			font-size:12px;
+			color:var(--muted);
+		}
+		.grid2{
+			display:grid;
+			grid-template-columns:1fr 1fr;
+			gap:10px;
+		}
+		@media (max-width: 520px){
+			.grid2{grid-template-columns:1fr}
+		}
+		.kv{
+			display:flex;
+			justify-content:space-between;
+			gap:10px;
+			padding:8px 10px;
+			border:1px solid var(--line);
+			border-radius:12px;
+			background:rgba(0,0,0,.12);
+		}
+		.kv .k{
+			color:var(--muted);
+			font-size:12px;
+			white-space:nowrap;
+		}
+		.kv .v{
+			font-variant-numeric: tabular-nums;
+			font-size:13px;
+			text-align:right;
+			overflow:hidden;
+			text-overflow:ellipsis;
+		}
+		.hr{
+			height:1px;
+			background:var(--line);
+			margin:12px 0;
+		}
+		.slider{
+			display:grid;
+			grid-template-columns: 1fr auto;
+			gap:10px;
+			align-items:center;
+			padding:10px;
+			border:1px solid var(--line);
+			border-radius:12px;
+			background:rgba(0,0,0,.12);
+		}
+		.slider label{
+			display:flex;
+			flex-direction:column;
+			gap:6px;
+		}
+		.slider label span{
+			font-size:12px;
+			color:var(--muted);
+		}
+		input[type="range"]{width:100%}
+		input[type="number"]{
+			width:92px;
+			padding:8px 8px;
+			border-radius:10px;
+			border:1px solid var(--line);
+			background:#0f1118;
+			color:var(--text);
+			font-variant-numeric: tabular-nums;
+		}
+		.bars{
+			display:flex;
+			flex-direction:column;
+			gap:8px;
+		}
+		.bar{
+			display:grid;
+			grid-template-columns: 130px 1fr 70px;
+			gap:10px;
+			align-items:center;
+		}
+		.bar .name{
+			font-size:12px;
+			color:var(--muted);
+		}
+		.track{
+			height:10px;
+			border-radius:999px;
+			background:#0f1118;
+			border:1px solid var(--line);
+			overflow:hidden;
+		}
+		.fill{
+			height:100%;
+			width:0%;
+			background:var(--good);
+			transition:width 80ms linear;
+		}
+		.bar .num{
+			text-align:right;
+			font-size:12px;
+			font-variant-numeric: tabular-nums;
+			color:var(--text);
+		}
+		canvas{
+			width:100%;
+			height:220px;
+			display:block;
+			border-radius:12px;
+			border:1px solid var(--line);
+			background:#0f1118;
+		}
+		.legend{
+			display:flex;
+			gap:10px;
+			flex-wrap:wrap;
+			margin-top:10px;
+			color:var(--muted);
+			font-size:12px;
+		}
+		.dot{
+			display:inline-block;
+			width:10px;height:10px;border-radius:999px;
+			margin-right:6px;
+			vertical-align:-1px;
+		}
+		.pill{
+			padding:6px 10px;
+			border-radius:999px;
+			border:1px solid var(--line);
+			background:rgba(0,0,0,.12);
+			font-size:12px;
+			color:var(--muted);
+		}
+		.pill strong{color:var(--text)}
+	</style>
+</head>
+
+<body>
+<header>
+	<div class="title">
+		<h1>Motion Feature Engine</h1>
+		<span class="badge">DeviceMotionEvent + DeviceOrientationEvent • no ML • no deps</span>
+	</div>
+</header>
+
+<div class="wrap">
+	<section class="card">
+		<div class="row" style="justify-content:space-between;">
+			<div class="row">
+				<button id="btnStart">Enable sensors</button>
+				<button id="btnStop" class="secondary" disabled>Stop</button>
+				<span id="status" class="pill"><strong>Status:</strong> idle</span>
+			</div>
+			<div class="row">
+				<span class="pill"><strong>Hz:</strong> <span id="hz">0</span></span>
+				<span class="pill"><strong>Window:</strong> 1.0s / 1.8s</span>
+			</div>
+		</div>
+
+		<div class="hr"></div>
+
+		<canvas id="scope" width="1000" height="420"></canvas>
+		<div class="legend">
+			<span><span class="dot" style="background:var(--good)"></span>LinAcc |a|</span>
+			<span><span class="dot" style="background:var(--warn)"></span>Energy (RMS)</span>
+			<span><span class="dot" style="background:var(--bad)"></span>Beat likelihood</span>
+		</div>
+
+		<div class="hr"></div>
+
+		<h3 style="margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.2px;">Feature outputs</h3>
+		<div class="bars">
+			<div class="bar">
+				<div class="name">Speed (est.)</div>
+				<div class="track"><div class="fill" id="barSpeed"></div></div>
+				<div class="num" id="numSpeed">0</div>
+			</div>
+			<div class="bar">
+				<div class="name">Energy (RMS)</div>
+				<div class="track"><div class="fill" id="barEnergy"></div></div>
+				<div class="num" id="numEnergy">0</div>
+			</div>
+			<div class="bar">
+				<div class="name">Jerk</div>
+				<div class="track"><div class="fill" id="barJerk"></div></div>
+				<div class="num" id="numJerk">0</div>
+			</div>
+			<div class="bar">
+				<div class="name">Smoothness</div>
+				<div class="track"><div class="fill" id="barSmooth"></div></div>
+				<div class="num" id="numSmooth">0</div>
+			</div>
+			<div class="bar">
+				<div class="name">Periodicity</div>
+				<div class="track"><div class="fill" id="barPeriod"></div></div>
+				<div class="num" id="numPeriod">0</div>
+			</div>
+			<div class="bar">
+				<div class="name">Beat likelihood</div>
+				<div class="track"><div class="fill" id="barBeat"></div></div>
+				<div class="num" id="numBeat">0</div>
+			</div>
+			<div class="bar">
+				<div class="name">Idle confidence</div>
+				<div class="track"><div class="fill" id="barIdle"></div></div>
+				<div class="num" id="numIdle">0</div>
+			</div>
+		</div>
+
+		<div class="hr"></div>
+
+		<div class="grid2">
+			<div class="kv"><div class="k">Dominant axis</div><div class="v" id="dominantAxis">—</div></div>
+			<div class="kv"><div class="k">Rot intensity (deg/s)</div><div class="v" id="rotIntensity">0</div></div>
+
+			<div class="kv"><div class="k">Speed vector (R,F)</div><div class="v" id="speedRF">0, 0</div></div>
+			<div class="kv"><div class="k">Speed (scalar)</div><div class="v" id="speedScalar">0</div></div>
+
+			<div class="kv"><div class="k">Periodicity freq (Hz)</div><div class="v" id="periodFreq">0</div></div>
+			<div class="kv"><div class="k">Drift vector (XY)</div><div class="v" id="driftXY">0, 0</div></div>
+		</div>
+
+		<div class="hr"></div>
+
+		<h3 style="margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.2px;">Raw sensor readout</h3>
+		<div class="grid2">
+			<div class="kv"><div class="k">Acc incl gravity (m/s²)</div><div class="v" id="rawAIG">—</div></div>
+			<div class="kv"><div class="k">Lin acc (m/s²)</div><div class="v" id="rawLA">—</div></div>
+			<div class="kv"><div class="k">Rot rate (deg/s)</div><div class="v" id="rawRR">—</div></div>
+			<div class="kv"><div class="k">Orientation (deg)</div><div class="v" id="rawOri">—</div></div>
+		</div>
+
+		<p class="small" style="margin:12px 0 0;line-height:1.35;">
+			Speed estimate assumes: phone flat, face up; top edge = forward; right edge = right. This is a leaky integrator for “feel,” not physical speed.
+		</p>
+	</section>
+
+	<aside class="card">
+		<h3 style="margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.2px;">Adjustable parameters</h3>
+
+		<div class="slider">
+			<label>
+				<span>Gravity low-pass alpha (higher = more stable gravity, less tilt response)</span>
+				<input id="alpha" type="range" min="0.80" max="0.995" step="0.001" value="0.94" />
+			</label>
+			<input id="alphaNum" type="number" min="0.80" max="0.995" step="0.001" value="0.94" />
+		</div>
+
+		<div class="slider">
+			<label>
+				<span>Idle threshold (m/s²) (below this feels “still”)</span>
+				<input id="idleTh" type="range" min="0.02" max="1.50" step="0.01" value="0.15" />
+			</label>
+			<input id="idleThNum" type="number" min="0.02" max="5" step="0.01" value="0.15" />
+		</div>
+
+		<div class="slider">
+			<label>
+				<span>Energy display scale (m/s² RMS → 100%)</span>
+				<input id="energyScale" type="range" min="0.3" max="8.0" step="0.05" value="2.2" />
+			</label>
+			<input id="energyScaleNum" type="number" min="0.1" max="20" step="0.05" value="2.2" />
+		</div>
+
+		<div class="slider">
+			<label>
+				<span>Speed decay (seconds) (shorter = snaps to 0 faster)</span>
+				<input id="speedTau" type="range" min="0.2" max="8.0" step="0.05" value="1.0" />
+			</label>
+			<input id="speedTauNum" type="number" min="0.1" max="20" step="0.05" value="1.0" />
+		</div>
+
+		<div class="slider">
+			<label>
+				<span>Speed display scale (arb. speed → 100%)</span>
+				<input id="speedScale" type="range" min="0.2" max="12.0" step="0.05" value="2.6" />
+			</label>
+			<input id="speedScaleNum" type="number" min="0.1" max="50" step="0.05" value="2.6" />
+		</div>
+
+		<div class="slider">
+			<label>
+				<span>Drift decay (seconds) (shorter = “stronger decay”)</span>
+				<input id="driftTau" type="range" min="0.2" max="8.0" step="0.05" value="1.6" />
+			</label>
+			<input id="driftTauNum" type="number" min="0.1" max="20" step="0.05" value="1.6" />
+		</div>
+
+		<div class="slider">
+			<label>
+				<span>Beat band (Hz) (used by beat likelihood)</span>
+				<div class="row" style="gap:8px;">
+					<input id="beatMin" type="number" min="0.1" max="10" step="0.05" value="0.7" />
+					<span class="small">to</span>
+					<input id="beatMax" type="number" min="0.1" max="10" step="0.05" value="2.5" />
+				</div>
+			</label>
+			<div class="small" style="text-align:right;">default</div>
+		</div>
+
+		<div class="hr"></div>
+
+		<h3 style="margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.2px;">Higher-level metrics</h3>
+		<div class="grid2">
+			<div class="kv"><div class="k">LinAcc |a| (m/s²)</div><div class="v" id="linMag">0</div></div>
+			<div class="kv"><div class="k">Jerk std (for smoothness)</div><div class="v" id="jerkStd">0</div></div>
+			<div class="kv"><div class="k">Autocorr lag (samples)</div><div class="v" id="acLag">0</div></div>
+			<div class="kv"><div class="k">Autocorr peak</div><div class="v" id="acPeak">0</div></div>
+		</div>
+
+		<div class="hr"></div>
+
+		<h3 style="margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.2px;">Interpretation helpers</h3>
+		<div class="grid2">
+			<div class="kv"><div class="k">Motion state</div><div class="v" id="motionState">—</div></div>
+			<div class="kv"><div class="k">Energy gate</div><div class="v" id="energyGate">0</div></div>
+		</div>
+	</aside>
+</div>
+
+<script>
+(() => {
+	"use strict";
+
+	// ---------------------------
+	// Utilities
+	// ---------------------------
+	const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+	const lerp = (a, b, t) => a + (b - a) * t;
+
+	function fmt(n, d=3){
+		if (!Number.isFinite(n)) return "—";
+		return n.toFixed(d);
+	}
+
+	function vec3mag(x,y,z){ return Math.sqrt(x*x + y*y + z*z); }
+
+	function mean(arr){
+		if (!arr.length) return 0;
+		let s = 0;
+		for (let i=0;i<arr.length;i++) s += arr[i];
+		return s / arr.length;
+	}
+
+	function stddev(arr){
+		if (arr.length < 2) return 0;
+		const m = mean(arr);
+		let s2 = 0;
+		for (let i=0;i<arr.length;i++){
+			const d = arr[i] - m;
+			s2 += d*d;
+		}
+		return Math.sqrt(s2 / (arr.length - 1));
+	}
+
+	function rms(arr){
+		if (!arr.length) return 0;
+		let s2 = 0;
+		for (let i=0;i<arr.length;i++) s2 += arr[i]*arr[i];
+		return Math.sqrt(s2 / arr.length);
+	}
+
+	function nowMs(){ return performance.now(); }
+
+	function soft01(x, k=4.0){
+		return 1 / (1 + Math.exp(-k * (x - 0.5)));
+	}
+
+	// ---------------------------
+	// UI bindings
+	// ---------------------------
+	const el = (id) => document.getElementById(id);
+
+	const btnStart = el("btnStart");
+	const btnStop = el("btnStop");
+	const statusEl = el("status");
+	const hzEl = el("hz");
+
+	const alphaR = el("alpha");
+	const alphaN = el("alphaNum");
+	const idleR = el("idleTh");
+	const idleN = el("idleThNum");
+	const energyScaleR = el("energyScale");
+	const energyScaleN = el("energyScaleNum");
+	const driftTauR = el("driftTau");
+	const driftTauN = el("driftTauNum");
+
+	const speedTauR = el("speedTau");
+	const speedTauN = el("speedTauNum");
+	const speedScaleR = el("speedScale");
+	const speedScaleN = el("speedScaleNum");
+
+	const beatMinN = el("beatMin");
+	const beatMaxN = el("beatMax");
+
+	function linkRangeNumber(rangeEl, numEl, onChange){
+		const syncFromRange = () => {
+			numEl.value = rangeEl.value;
+			onChange();
+		};
+		const syncFromNum = () => {
+			rangeEl.value = numEl.value;
+			onChange();
+		};
+		rangeEl.addEventListener("input", syncFromRange);
+		numEl.addEventListener("input", syncFromNum);
+		syncFromRange();
+	}
+
+	let params = {
+		gravityAlpha: 0.94,
+		idleThreshold: 0.15,
+		energyScale: 2.2,
+
+		// speed feel: leaky integration of accel XY with gating
+		speedTau: 1.0,
+		speedScale: 2.6,
+		speedClamp: 30.0, // arbitrary units clamp to prevent runaway drift
+
+		driftTau: 1.6,
+		beatHzMin: 0.7,
+		beatHzMax: 2.5
+	};
+
+	linkRangeNumber(alphaR, alphaN, () => params.gravityAlpha = clamp(parseFloat(alphaN.value), 0.80, 0.995));
+	linkRangeNumber(idleR, idleN, () => params.idleThreshold = Math.max(0.0, parseFloat(idleN.value)));
+	linkRangeNumber(energyScaleR, energyScaleN, () => params.energyScale = Math.max(0.0001, parseFloat(energyScaleN.value)));
+	linkRangeNumber(speedTauR, speedTauN, () => params.speedTau = Math.max(0.05, parseFloat(speedTauN.value)));
+	linkRangeNumber(speedScaleR, speedScaleN, () => params.speedScale = Math.max(0.0001, parseFloat(speedScaleN.value)));
+	linkRangeNumber(driftTauR, driftTauN, () => params.driftTau = Math.max(0.05, parseFloat(driftTauN.value)));
+
+	function syncBeatBand(){
+		let a = parseFloat(beatMinN.value);
+		let b = parseFloat(beatMaxN.value);
+		if (!Number.isFinite(a)) a = 0.7;
+		if (!Number.isFinite(b)) b = 2.5;
+		if (a > b) [a,b] = [b,a];
+		params.beatHzMin = clamp(a, 0.05, 10);
+		params.beatHzMax = clamp(b, 0.05, 10);
+		beatMinN.value = params.beatHzMin;
+		beatMaxN.value = params.beatHzMax;
+	}
+	beatMinN.addEventListener("input", syncBeatBand);
+	beatMaxN.addEventListener("input", syncBeatBand);
+	syncBeatBand();
+
+	// Feature UI
+	const barSpeed = el("barSpeed");
+	const barEnergy = el("barEnergy");
+	const barJerk = el("barJerk");
+	const barSmooth = el("barSmooth");
+	const barPeriod = el("barPeriod");
+	const barBeat = el("barBeat");
+	const barIdle = el("barIdle");
+
+	const numSpeed = el("numSpeed");
+	const numEnergy = el("numEnergy");
+	const numJerk = el("numJerk");
+	const numSmooth = el("numSmooth");
+	const numPeriod = el("numPeriod");
+	const numBeat = el("numBeat");
+	const numIdle = el("numIdle");
+
+	const dominantAxisEl = el("dominantAxis");
+	const rotIntensityEl = el("rotIntensity");
+	const periodFreqEl = el("periodFreq");
+	const driftXYEl = el("driftXY");
+
+	const speedRFEl = el("speedRF");
+	const speedScalarEl = el("speedScalar");
+
+	const rawAIGEl = el("rawAIG");
+	const rawLAEl = el("rawLA");
+	const rawRREl = el("rawRR");
+	const rawOriEl = el("rawOri");
+
+	const linMagEl = el("linMag");
+	const jerkStdEl = el("jerkStd");
+	const acLagEl = el("acLag");
+	const acPeakEl = el("acPeak");
+	const motionStateEl = el("motionState");
+	const energyGateEl = el("energyGate");
+
+	// Scope
+	const canvas = el("scope");
+	const ctx = canvas.getContext("2d");
+
+	// ---------------------------
+	// Sensor state
+	// ---------------------------
+	let running = false;
+	let rafId = null;
+
+	let lastEventMs = 0;
+	let hzSmoothed = 0;
+
+	// Most recent raw readings
+	let aInc = {x:0,y:0,z:0};
+	let aLin = {x:0,y:0,z:0};
+	let rot = {a:0,b:0,g:0};
+	let ori = {a:0,b:0,g:0};
+
+	// Gravity estimate (low-pass)
+	let gEst = {x:0,y:0,z:0};
+	let haveGInit = false;
+
+	// Drift (expressive vector)
+	let drift = {x:0, y:0};
+
+	// Speed estimate (assumed flat orientation)
+	// Convention: +Y (device) = forward (top edge), +X (device) = right edge
+	let velRF = {r:0, f:0}; // right/forward pseudo-velocity (arbitrary units)
+
+	// Rolling sample buffers
+	const WIN_ENERGY_MS = 1000;
+	const WIN_PERIOD_MS = 1800;
+
+	// store: {t, ax, ay, az, mag, jerk, rmag}
+	let samples = [];
+
+	let prevMag = 0;
+	let prevMagT = 0;
+
+	function pruneSamples(now){
+		const cutoff = now - WIN_PERIOD_MS - 80;
+		while (samples.length && samples[0].t < cutoff) samples.shift();
+	}
+
+	// ---------------------------
+	// Feature extraction
+	// ---------------------------
+	function computeFeatures(now){
+		pruneSamples(now);
+
+		const w1 = samples.filter(s => s.t >= now - WIN_ENERGY_MS);
+		const wP = samples.filter(s => s.t >= now - WIN_PERIOD_MS);
+
+		let linMag = 0;
+		if (samples.length) linMag = samples[samples.length - 1].mag;
+
+		const mags1 = w1.map(s => s.mag);
+		const energyRms = rms(mags1);
+
+		const jerks1 = w1.map(s => Math.abs(s.jerk));
+		const jerkMeanAbs = jerks1.length ? (jerks1.reduce((a,b)=>a+b,0) / jerks1.length) : 0;
+		const jerkSd = stddev(jerks1);
+
+		const smoothness = Math.exp(-2.2 * jerkSd);
+
+		// Dominant axis over 1s: mean abs per axis
+		let axm=0, aym=0, azm=0;
+		if (w1.length){
+			for (const s of w1){
+				axm += Math.abs(s.ax);
+				aym += Math.abs(s.ay);
+				azm += Math.abs(s.az);
+			}
+			axm /= w1.length; aym /= w1.length; azm /= w1.length;
+		}
+		let domAxis = "—";
+		const mmax = Math.max(axm, aym, azm);
+		if (mmax > 0){
+			if (mmax === axm) domAxis = "X";
+			else if (mmax === aym) domAxis = "Y";
+			else domAxis = "Z";
+		}
+
+		// Rotation intensity: RMS of rotation magnitude over 1s
+		const r1 = w1.map(s => s.rmag);
+		const rotRms = rms(r1);
+
+		// Periodicity: autocorrelation peak in beat band lags
+		let periodicityScore = 0;
+		let periodicityHz = 0;
+		let acLag = 0;
+		let acPeak = 0;
+
+		if (wP.length >= 20){
+			const x = wP.map(s => s.mag);
+			const xMean = mean(x);
+			for (let i=0;i<x.length;i++) x[i] -= xMean;
+
+			let dts = [];
+			for (let i=1;i<wP.length;i++){
+				const dt = (wP[i].t - wP[i-1].t) / 1000;
+				if (dt > 0.001 && dt < 0.2) dts.push(dt);
+			}
+			dts.sort((a,b)=>a-b);
+			const dt = dts.length ? dts[Math.floor(dts.length/2)] : 0.02;
+
+			const hzMin = Math.max(0.05, params.beatHzMin);
+			const hzMax = Math.max(hzMin + 0.001, params.beatHzMax);
+
+			const lagMin = Math.max(2, Math.floor((1 / hzMax) / dt));
+			const lagMax = Math.min(x.length - 3, Math.ceil((1 / hzMin) / dt));
+
+			let denom = 0;
+			for (let i=0;i<x.length;i++) denom += x[i]*x[i];
+			denom = Math.max(1e-9, denom);
+
+			let best = -1;
+			let bestLag = 0;
+
+			for (let lag=lagMin; lag<=lagMax; lag++){
+				let num = 0;
+				for (let i=0; i<x.length - lag; i++){
+					num += x[i] * x[i + lag];
+				}
+				const r = num / denom;
+				if (r > best){
+					best = r;
+					bestLag = lag;
+				}
+			}
+
+			acPeak = clamp(best, 0, 1);
+			acLag = bestLag;
+
+			periodicityScore = clamp((acPeak - 0.08) / 0.55, 0, 1);
+			if (bestLag > 0) periodicityHz = 1 / (bestLag * dt);
+		}
+
+		// Beat likelihood
+		const energyGate = clamp((energyRms - params.idleThreshold) / (params.idleThreshold * 4.0 + 1e-6), 0, 1);
+		const freqInBand = (periodicityHz >= params.beatHzMin && periodicityHz <= params.beatHzMax) ? 1 : 0;
+		const beatLikelihood = clamp(periodicityScore * energyGate * (0.6 + 0.4*freqInBand), 0, 1);
+
+		// Idle confidence
+		const eN = clamp(energyRms / (params.idleThreshold * 3.5 + 1e-6), 0, 2);
+		const jN = clamp(jerkMeanAbs / (params.idleThreshold * 14.0 + 1e-6), 0, 2);
+		const rN = clamp(rotRms / 140.0, 0, 2);
+
+		const activity = clamp(0.52*eN + 0.33*jN + 0.15*rN, 0, 2);
+		const idleConfidence = clamp(1 - soft01(clamp(activity/1.2, 0, 1)), 0, 1);
+
+		// Expressive drift (XY): integrate with strong decay (NOT position)
+		if (samples.length >= 2){
+			const s0 = samples[samples.length - 2];
+			const s1 = samples[samples.length - 1];
+			const dt = Math.max(1e-3, (s1.t - s0.t) / 1000);
+
+			const tau = Math.max(0.05, params.driftTau);
+			const decay = Math.exp(-dt / tau);
+			drift.x *= decay;
+			drift.y *= decay;
+
+			const gain = lerp(0.15, 1.0, 1 - idleConfidence);
+			drift.x += s1.ax * dt * gain;
+			drift.y += s1.ay * dt * gain;
+		}
+
+		// ---------------------------------------
+		// Speed estimate (responsive “feel”)
+		// Assumption: phone flat face up
+		// +Y = forward (top edge), +X = right
+		//
+		// Method:
+		// - leaky integrate accel XY -> vel (arb units)
+		// - deadzone accel near idle (kills bias)
+		// - extra damping when idleConfidence is high
+		// ---------------------------------------
+		let speed = 0;
+		let speedR = velRF.r;
+		let speedF = velRF.f;
+
+		if (samples.length >= 2){
+			const s0 = samples[samples.length - 2];
+			const s1 = samples[samples.length - 1];
+			const dt = Math.max(1e-3, (s1.t - s0.t) / 1000);
+
+			const tau = Math.max(0.05, params.speedTau);
+			const decay = Math.exp(-dt / tau);
+
+			// small accel deadzone tied to idle threshold
+			const dz = params.idleThreshold * 0.35;
+
+			let aR = (Math.abs(s1.ax) < dz) ? 0 : s1.ax;
+			let aF = (Math.abs(s1.ay) < dz) ? 0 : s1.ay;
+
+			// gating: when idleConfidence is high, reduce integration gain + add stronger damping
+			const gain = lerp(0.10, 1.00, 1 - idleConfidence);
+
+			speedR *= decay;
+			speedF *= decay;
+
+			speedR += aR * dt * gain;
+			speedF += aF * dt * gain;
+
+			// snap toward 0 when very idle (kills drift quickly)
+			if (idleConfidence > 0.9){
+				const snap = Math.exp(-dt / 0.18);
+				speedR *= snap;
+				speedF *= snap;
+			}
+
+			// clamp (prevents runaway if sensor bias leaks through)
+			const sMag = Math.hypot(speedR, speedF);
+			if (sMag > params.speedClamp){
+				const k = params.speedClamp / (sMag + 1e-9);
+				speedR *= k;
+				speedF *= k;
+			}
+
+			velRF.r = speedR;
+			velRF.f = speedF;
+		}
+
+		speed = Math.hypot(speedR, speedF);
+
+		// Motion state label
+		let motionState = "unknown";
+		if (!samples.length) motionState = "no data";
+		else if (idleConfidence > 0.8 && speed < params.speedScale * 0.08) motionState = "idle";
+		else if (beatLikelihood > 0.55) motionState = "rhythmic";
+		else if (energyRms > params.idleThreshold * 2.2 || speed > params.speedScale * 0.35) motionState = "active";
+		else motionState = "light motion";
+
+		return {
+			linMag,
+			energyRms,
+			jerkMeanAbs,
+			jerkSd,
+			smoothness,
+			periodicityScore,
+			periodicityHz,
+			beatLikelihood,
+			domAxis,
+			rotRms,
+			idleConfidence,
+			driftX: drift.x,
+			driftY: drift.y,
+			acLag,
+			acPeak,
+			energyGate,
+			motionState,
+			speed,
+			speedR,
+			speedF
+		};
+	}
+
+	// ---------------------------
+	// Visualization
+	// ---------------------------
+	const plot = {
+		max: 280,
+		lin: [],
+		energy: [],
+		beat: []
+	};
+
+	function pushPlot(linMag, energy, beat){
+		plot.lin.push(linMag);
+		plot.energy.push(energy);
+		plot.beat.push(beat);
+		while (plot.lin.length > plot.max){
+			plot.lin.shift();
+			plot.energy.shift();
+			plot.beat.shift();
+		}
+	}
+
+	function drawScope(){
+		const w = canvas.width;
+		const h = canvas.height;
+
+		ctx.clearRect(0,0,w,h);
+
+		ctx.globalAlpha = 1;
+		ctx.strokeStyle = "#20263a";
+		ctx.lineWidth = 1;
+		for (let i=1;i<6;i++){
+			const y = (h*i)/6;
+			ctx.beginPath();
+			ctx.moveTo(0,y);
+			ctx.lineTo(w,y);
+			ctx.stroke();
+		}
+
+		const linScale = Math.max(0.25, params.energyScale * 2.2);
+		const energyScale = Math.max(0.1, params.energyScale);
+
+		function drawSeries(arr, scale, color){
+			if (arr.length < 2) return;
+			ctx.strokeStyle = color;
+			ctx.lineWidth = 2;
+			ctx.beginPath();
+			for (let i=0;i<arr.length;i++){
+				const x = (i/(plot.max-1)) * w;
+				const v = clamp(arr[i] / scale, 0, 1);
+				const y = h - v * (h*0.92) - (h*0.04);
+				if (i===0) ctx.moveTo(x,y);
+				else ctx.lineTo(x,y);
+			}
+			ctx.stroke();
+		}
+
+		drawSeries(plot.lin, linScale, "#44d17a");
+		drawSeries(plot.energy, energyScale, "#f2c94c");
+		drawSeries(plot.beat, 1.0, "#ff5c7a");
+	}
+
+	// ---------------------------
+	// Event handling
+	// ---------------------------
+	function setStatus(text){
+		statusEl.innerHTML = `<strong>Status:</strong> ${text}`;
+	}
+
+	function updateHz(t){
+		if (!lastEventMs){
+			lastEventMs = t;
+			return;
+		}
+		const dt = (t - lastEventMs) / 1000;
+		lastEventMs = t;
+		if (dt > 0.0001){
+			const hz = 1 / dt;
+			hzSmoothed = hzSmoothed ? (hzSmoothed*0.9 + hz*0.1) : hz;
+			hzEl.textContent = Math.round(hzSmoothed).toString();
+		}
+	}
+
+	function onDeviceMotion(e){
+		const t = nowMs();
+		updateHz(t);
+
+		const aig = e.accelerationIncludingGravity;
+		if (aig && Number.isFinite(aig.x)){
+			aInc.x = aig.x;
+			aInc.y = aig.y;
+			aInc.z = aig.z;
+		}
+
+		const rr = e.rotationRate;
+		if (rr){
+			rot.a = Number.isFinite(rr.alpha) ? rr.alpha : 0;
+			rot.b = Number.isFinite(rr.beta) ? rr.beta : 0;
+			rot.g = Number.isFinite(rr.gamma) ? rr.gamma : 0;
+		}
+
+		const la = e.acceleration;
+		let haveTrueLin = false;
+		if (la && (Number.isFinite(la.x) || Number.isFinite(la.y) || Number.isFinite(la.z))){
+			aLin.x = Number.isFinite(la.x) ? la.x : 0;
+			aLin.y = Number.isFinite(la.y) ? la.y : 0;
+			aLin.z = Number.isFinite(la.z) ? la.z : 0;
+			haveTrueLin = true;
+		}
+
+		let lin = {x:aLin.x, y:aLin.y, z:aLin.z};
+
+		if (!haveTrueLin){
+			if (!haveGInit){
+				gEst.x = aInc.x; gEst.y = aInc.y; gEst.z = aInc.z;
+				haveGInit = true;
+			} else {
+				const a = params.gravityAlpha;
+				gEst.x = a*gEst.x + (1-a)*aInc.x;
+				gEst.y = a*gEst.y + (1-a)*aInc.y;
+				gEst.z = a*gEst.z + (1-a)*aInc.z;
+			}
+			lin = {
+				x: aInc.x - gEst.x,
+				y: aInc.y - gEst.y,
+				z: aInc.z - gEst.z
+			};
+			aLin.x = lin.x; aLin.y = lin.y; aLin.z = lin.z;
+		}
+
+		const mag = vec3mag(lin.x, lin.y, lin.z);
+
+		let jerk = 0;
+		if (prevMagT){
+			const dt = Math.max(1e-3, (t - prevMagT) / 1000);
+			jerk = (mag - prevMag) / dt;
+		}
+		prevMag = mag;
+		prevMagT = t;
+
+		const rmag = vec3mag(rot.a, rot.b, rot.g);
+
+		samples.push({
+			t,
+			ax: lin.x, ay: lin.y, az: lin.z,
+			mag,
+			jerk,
+			rmag
+		});
+	}
+
+	function onDeviceOrientation(e){
+		ori.a = Number.isFinite(e.alpha) ? e.alpha : 0;
+		ori.b = Number.isFinite(e.beta) ? e.beta : 0;
+		ori.g = Number.isFinite(e.gamma) ? e.gamma : 0;
+	}
+
+	// ---------------------------
+	// Main loop
+	// ---------------------------
+	function tick(){
+		if (!running) return;
+
+		const t = nowMs();
+		const f = computeFeatures(t);
+
+		// Numbers
+		linMagEl.textContent = fmt(f.linMag, 3);
+		rotIntensityEl.textContent = fmt(f.rotRms, 2);
+		dominantAxisEl.textContent = f.domAxis;
+
+		speedRFEl.textContent = `${fmt(f.speedR, 3)}, ${fmt(f.speedF, 3)}`;
+		speedScalarEl.textContent = fmt(f.speed, 3);
+
+		periodFreqEl.textContent = fmt(f.periodicityHz, 3);
+		driftXYEl.textContent = `${fmt(f.driftX, 3)}, ${fmt(f.driftY, 3)}`;
+
+		jerkStdEl.textContent = fmt(f.jerkSd, 4);
+		acLagEl.textContent = f.acLag ? String(f.acLag) : "0";
+		acPeakEl.textContent = fmt(f.acPeak, 4);
+		motionStateEl.textContent = f.motionState;
+		energyGateEl.textContent = fmt(f.energyGate, 3);
+
+		// Bars
+		const spNorm = clamp(f.speed / params.speedScale, 0, 1);
+		const eNorm = clamp(f.energyRms / params.energyScale, 0, 1);
+		const jNorm = clamp(f.jerkMeanAbs / (params.idleThreshold * 18.0 + 1e-6), 0, 1);
+		const sNorm = clamp(f.smoothness, 0, 1);
+		const pNorm = clamp(f.periodicityScore, 0, 1);
+		const bNorm = clamp(f.beatLikelihood, 0, 1);
+		const iNorm = clamp(f.idleConfidence, 0, 1);
+
+		barSpeed.style.width = `${(spNorm*100).toFixed(1)}%`;
+		barEnergy.style.width = `${(eNorm*100).toFixed(1)}%`;
+		barJerk.style.width = `${(jNorm*100).toFixed(1)}%`;
+		barSmooth.style.width = `${(sNorm*100).toFixed(1)}%`;
+		barPeriod.style.width = `${(pNorm*100).toFixed(1)}%`;
+		barBeat.style.width = `${(bNorm*100).toFixed(1)}%`;
+		barIdle.style.width = `${(iNorm*100).toFixed(1)}%`;
+
+		numSpeed.textContent = fmt(f.speed, 3);
+		numEnergy.textContent = fmt(f.energyRms, 3);
+		numJerk.textContent = fmt(f.jerkMeanAbs, 3);
+		numSmooth.textContent = fmt(f.smoothness, 3);
+		numPeriod.textContent = fmt(f.periodicityScore, 3);
+		numBeat.textContent = fmt(f.beatLikelihood, 3);
+		numIdle.textContent = fmt(f.idleConfidence, 3);
+
+		// Raw readouts
+		rawAIGEl.textContent = `${fmt(aInc.x,2)}, ${fmt(aInc.y,2)}, ${fmt(aInc.z,2)}`;
+		rawLAEl.textContent = `${fmt(aLin.x,2)}, ${fmt(aLin.y,2)}, ${fmt(aLin.z,2)}`;
+		rawRREl.textContent = `${fmt(rot.a,2)}, ${fmt(rot.b,2)}, ${fmt(rot.g,2)}`;
+		rawOriEl.textContent = `${fmt(ori.a,1)}, ${fmt(ori.b,1)}, ${fmt(ori.g,1)}`;
+
+		// Plot history
+		pushPlot(f.linMag, f.energyRms, f.beatLikelihood);
+		drawScope();
+
+		rafId = requestAnimationFrame(tick);
+	}
+
+	// ---------------------------
+	// Start / Stop
+	// ---------------------------
+	async function requestMotionPermissionIfNeeded(){
+		const DME = window.DeviceMotionEvent;
+		if (DME && typeof DME.requestPermission === "function"){
+			const res = await DME.requestPermission();
+			if (res !== "granted") throw new Error("Motion permission not granted");
+		}
+		const DOE = window.DeviceOrientationEvent;
+		if (DOE && typeof DOE.requestPermission === "function"){
+			const res = await DOE.requestPermission();
+			if (res !== "granted") throw new Error("Orientation permission not granted");
+		}
+	}
+
+	function attachListeners(){
+		window.addEventListener("devicemotion", onDeviceMotion, {passive:true});
+		window.addEventListener("deviceorientation", onDeviceOrientation, {passive:true});
+	}
+
+	function detachListeners(){
+		window.removeEventListener("devicemotion", onDeviceMotion);
+		window.removeEventListener("deviceorientation", onDeviceOrientation);
+	}
+
+	function resetEngine(){
+		samples = [];
+		prevMag = 0;
+		prevMagT = 0;
+		drift.x = 0; drift.y = 0;
+		velRF.r = 0; velRF.f = 0;
+		haveGInit = false;
+		hzSmoothed = 0;
+		lastEventMs = 0;
+
+		plot.lin = [];
+		plot.energy = [];
+		plot.beat = [];
+	}
+
+	async function start(){
+		if (running) return;
+
+		if (!("DeviceMotionEvent" in window)){
+			setStatus("DeviceMotionEvent not supported");
+			return;
+		}
+
+		try{
+			setStatus("requesting permission…");
+			await requestMotionPermissionIfNeeded();
+
+			resetEngine();
+			attachListeners();
+
+			running = true;
+			btnStart.disabled = true;
+			btnStop.disabled = false;
+			setStatus("running");
+
+			rafId = requestAnimationFrame(tick);
+		}catch(err){
+			console.error(err);
+			setStatus("permission denied / unavailable");
+		}
+	}
+
+	function stop(){
+		if (!running) return;
+
+		running = false;
+		btnStart.disabled = false;
+		btnStop.disabled = true;
+
+		if (rafId) cancelAnimationFrame(rafId);
+		rafId = null;
+
+		detachListeners();
+		setStatus("stopped");
+	}
+
+	btnStart.addEventListener("click", start);
+	btnStop.addEventListener("click", stop);
+
+	function resizeCanvas(){
+		const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+		const rect = canvas.getBoundingClientRect();
+		const w = Math.max(300, Math.floor(rect.width * dpr));
+		const h = Math.max(160, Math.floor(rect.height * dpr));
+		if (canvas.width !== w || canvas.height !== h){
+			canvas.width = w;
+			canvas.height = h;
+		}
+	}
+	window.addEventListener("resize", resizeCanvas);
+	resizeCanvas();
+
+	setStatus("idle");
+})();
+</script>
+</body>
+</html>
