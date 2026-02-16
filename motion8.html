@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+	<title>Motion Drone</title>
+	<style>
+		body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 16px; }
+		button { font-size: 16px; padding: 10px 12px; }
+		.row { display: grid; grid-template-columns: 140px 1fr 80px; gap: 10px; align-items: center; margin: 10px 0; }
+		input[type="range"] { width: 100%; }
+		.box { padding: 12px; border: 1px solid #ddd; border-radius: 10px; }
+		.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 12px; white-space: pre; }
+		.small { font-size: 12px; color: #444; }
+	</style>
+</head>
+<body>
+	<div class="box">
+		<button id="btnStart">Start (enable audio + motion)</button>
+		<button id="btnCal">Calibrate “face up, top forward”</button>
+		<div class="small" style="margin-top:8px">
+			Assumes device is mounted face up; top edge points forward. Forward axis = +Y.
+		</div>
+	</div>
+
+	<div class="box" style="margin-top:12px">
+		<div class="row">
+			<div>Base freq</div>
+			<input id="baseFreq" type="range" min="30" max="220" step="1" value="55" />
+			<input id="baseFreqN" type="number" min="30" max="220" step="1" value="55" />
+		</div>
+
+		<div class="row">
+			<div>Range (semitones)</div>
+			<input id="rangeSt" type="range" min="0" max="36" step="1" value="12" />
+			<input id="rangeStN" type="number" min="0" max="36" step="1" value="12" />
+		</div>
+
+		<div class="row">
+			<div>Sensitivity</div>
+			<input id="sens" type="range" min="0" max="12" step="0.1" value="4.0" />
+			<input id="sensN" type="number" min="0" max="12" step="0.1" value="4.0" />
+		</div>
+
+		<div class="row">
+			<div>Deadzone (m/s²)</div>
+			<input id="dead" type="range" min="0" max="2.0" step="0.01" value="0.15" />
+			<input id="deadN" type="number" min="0" max="2.0" step="0.01" value="0.15" />
+		</div>
+
+		<div class="row">
+			<div>Gravity τ (s)</div>
+			<input id="tauG" type="range" min="0.1" max="2.5" step="0.01" value="0.9" />
+			<input id="tauGN" type="number" min="0.1" max="2.5" step="0.01" value="0.9" />
+		</div>
+
+		<div class="row">
+			<div>Accel smooth τ (s)</div>
+			<input id="tauA" type="range" min="0.02" max="0.8" step="0.01" value="0.16" />
+			<input id="tauAN" type="number" min="0.02" max="0.8" step="0.01" value="0.16" />
+		</div>
+
+		<div class="row">
+			<div>Pitch attack (s)</div>
+			<input id="atk" type="range" min="0.01" max="0.8" step="0.01" value="0.08" />
+			<input id="atkN" type="number" min="0.01" max="0.8" step="0.01" value="0.08" />
+		</div>
+
+		<div class="row">
+			<div>Pitch release (s)</div>
+			<input id="rel" type="range" min="0.01" max="1.5" step="0.01" value="0.25" />
+			<input id="relN" type="number" min="0.01" max="1.5" step="0.01" value="0.25" />
+		</div>
+	</div>
+
+	<div class="box" style="margin-top:12px">
+		<div class="mono" id="dbg">not started</div>
+	</div>
+
+<script>
+(() => {
+	// ---------- Utilities ----------
+	function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+	function expSmoothingAlpha(dt, tau) {
+		// alpha for: y = alpha*y + (1-alpha)*x  (low-pass)
+		// tau in seconds, dt in seconds
+		if (tau <= 0) return 0;
+		return Math.exp(-dt / tau);
+	}
+	function bindPair(rangeEl, numEl) {
+		const syncFromRange = () => { numEl.value = rangeEl.value; };
+		const syncFromNum = () => { rangeEl.value = numEl.value; };
+		rangeEl.addEventListener("input", syncFromRange);
+		numEl.addEventListener("input", syncFromNum);
+		syncFromRange();
+	}
+
+	// ---------- UI ----------
+	const els = {
+		btnStart: document.getElementById("btnStart"),
+		btnCal: document.getElementById("btnCal"),
+		dbg: document.getElementById("dbg"),
+
+		baseFreq: document.getElementById("baseFreq"),
+		baseFreqN: document.getElementById("baseFreqN"),
+		rangeSt: document.getElementById("rangeSt"),
+		rangeStN: document.getElementById("rangeStN"),
+		sens: document.getElementById("sens"),
+		sensN: document.getElementById("sensN"),
+		dead: document.getElementById("dead"),
+		deadN: document.getElementById("deadN"),
+		tauG: document.getElementById("tauG"),
+		tauGN: document.getElementById("tauGN"),
+		tauA: document.getElementById("tauA"),
+		tauAN: document.getElementById("tauAN"),
+		atk: document.getElementById("atk"),
+		atkN: document.getElementById("atkN"),
+		rel: document.getElementById("rel"),
+		relN: document.getElementById("relN"),
+	};
+
+	bindPair(els.baseFreq, els.baseFreqN);
+	bindPair(els.rangeSt, els.rangeStN);
+	bindPair(els.sens, els.sensN);
+	bindPair(els.dead, els.deadN);
+	bindPair(els.tauG, els.tauGN);
+	bindPair(els.tauA, els.tauAN);
+	bindPair(els.atk, els.atkN);
+	bindPair(els.rel, els.relN);
+
+	// ---------- Audio ----------
+	let ac = null;
+	let osc = null;
+	let gain = null;
+	let filt = null;
+
+	function ensureAudio() {
+		if (ac) return;
+
+		ac = new (window.AudioContext || window.webkitAudioContext)();
+
+		osc = ac.createOscillator();
+		osc.type = "sawtooth";
+
+		filt = ac.createBiquadFilter();
+		filt.type = "lowpass";
+		filt.frequency.value = 1200;
+		filt.Q.value = 0.7;
+
+		gain = ac.createGain();
+		gain.gain.value = 0.0;
+
+		osc.connect(filt);
+		filt.connect(gain);
+		gain.connect(ac.destination);
+
+		osc.start();
+	}
+
+	async function unlockAudio() {
+		ensureAudio();
+		if (ac.state !== "running") await ac.resume();
+		// Fade in gently
+		const t = ac.currentTime;
+		gain.gain.cancelScheduledValues(t);
+		gain.gain.setValueAtTime(gain.gain.value, t);
+		gain.gain.linearRampToValueAtTime(0.15, t + 0.08);
+	}
+
+	// ---------- Motion processing state ----------
+	let started = false;
+	let lastT = null;
+
+	// Gravity estimate (device coords)
+	let g = { x: 0, y: 0, z: 0 };
+	let haveG = false;
+
+	// Smoothed forward linear acceleration (m/s^2) and smoothed pitch control (semitones)
+	let aFwdLP = 0;
+	let stNow = 0;
+
+	// Hysteresis state
+	let active = false;
+	const hysteresisExtra = 0.05; // additional deadzone to turn off
+
+	// For calibration snapshot
+	let lastAincG = null;
+
+	function readParams() {
+		return {
+			baseFreq: parseFloat(els.baseFreq.value),
+			rangeSt: parseFloat(els.rangeSt.value),
+			sens: parseFloat(els.sens.value),
+			dead: parseFloat(els.dead.value),
+			tauG: parseFloat(els.tauG.value),
+			tauA: parseFloat(els.tauA.value),
+			atk: parseFloat(els.atk.value),
+			rel: parseFloat(els.rel.value),
+		};
+	}
+
+	function setOscFreq(freqHz) {
+		if (!ac || !osc) return;
+		const t = ac.currentTime;
+		osc.frequency.cancelScheduledValues(t);
+		osc.frequency.setTargetAtTime(freqHz, t, 0.015);
+	}
+
+	function onMotion(e) {
+		if (!started) return;
+
+		// Prefer includingGravity (more available). Units: m/s^2.
+		const a = e.accelerationIncludingGravity;
+		if (!a || a.x == null || a.y == null || a.z == null) return;
+
+		lastAincG = { x: a.x, y: a.y, z: a.z };
+
+		const now = performance.now() * 0.001;
+		if (lastT == null) lastT = now;
+		let dt = now - lastT;
+		lastT = now;
+		dt = clamp(dt, 0.001, 0.050); // clamp to avoid spikes on background/resume
+
+		const p = readParams();
+
+		// 1) Gravity low-pass estimate
+		// Initialize gravity on first good sample
+		if (!haveG) {
+			g.x = a.x; g.y = a.y; g.z = a.z;
+			haveG = true;
+		} else {
+			const alphaG = expSmoothingAlpha(dt, p.tauG);
+			g.x = alphaG * g.x + (1 - alphaG) * a.x;
+			g.y = alphaG * g.y + (1 - alphaG) * a.y;
+			g.z = alphaG * g.z + (1 - alphaG) * a.z;
+		}
+
+		// 2) Linear acceleration (high-pass)
+		const lin = {
+			x: a.x - g.x,
+			y: a.y - g.y,
+			z: a.z - g.z,
+		};
+
+		// 3) Forward axis (+Y)
+		let aFwd = lin.y;
+
+		// 4) Smooth forward accel a bit more (removes remaining jitter)
+		const alphaA = expSmoothingAlpha(dt, p.tauA);
+		aFwdLP = alphaA * aFwdLP + (1 - alphaA) * aFwd;
+
+		// 5) Deadzone + hysteresis
+		const mag = Math.abs(aFwdLP);
+		if (!active) {
+			if (mag > p.dead) active = true;
+		} else {
+			if (mag < Math.max(0, p.dead - hysteresisExtra)) active = false;
+		}
+
+		// 6) Map accel to pitch offset in semitones
+		// Positive accel => pitch up. Negative accel => pitch down.
+		let stTarget = 0;
+		if (active) {
+			stTarget = clamp(aFwdLP * p.sens, -p.rangeSt, p.rangeSt);
+		}
+
+		// 7) Musical smoothing (attack/release)
+		const tau = (Math.abs(stTarget) > Math.abs(stNow)) ? p.atk : p.rel;
+		const alphaSt = expSmoothingAlpha(dt, tau);
+		stNow = alphaSt * stNow + (1 - alphaSt) * stTarget;
+
+		// 8) Apply to oscillator
+		const freq = p.baseFreq * Math.pow(2, stNow / 12);
+		setOscFreq(freq);
+
+		// Debug readout
+		els.dbg.textContent =
+			`dt: ${dt.toFixed(3)} s
+aIncG:  x ${a.x.toFixed(2)}  y ${a.y.toFixed(2)}  z ${a.z.toFixed(2)}
+grav:   x ${g.x.toFixed(2)}  y ${g.y.toFixed(2)}  z ${g.z.toFixed(2)}
+lin:    x ${lin.x.toFixed(2)}  y ${lin.y.toFixed(2)}  z ${lin.z.toFixed(2)}
+fwdLP:  ${aFwdLP.toFixed(3)} m/s^2   active: ${active ? "yes" : "no"}
+st:     ${stNow.toFixed(2)} / target ${stTarget.toFixed(2)}  (range ±${p.rangeSt})
+freq:   ${freq.toFixed(2)} Hz`;
+	}
+
+	async function requestMotionPermissionIfNeeded() {
+		// iOS 13+ requires permission via a user gesture.
+		const DME = window.DeviceMotionEvent;
+		if (!DME) throw new Error("DeviceMotionEvent not supported on this browser/device.");
+
+		if (typeof DME.requestPermission === "function") {
+			const res = await DME.requestPermission();
+			if (res !== "granted") throw new Error("Motion permission not granted.");
+		}
+	}
+
+	function startMotion() {
+		if (started) return;
+		window.addEventListener("devicemotion", onMotion, { passive: true });
+		started = true;
+	}
+
+	els.btnStart.addEventListener("click", async () => {
+		try {
+			await unlockAudio();
+			await requestMotionPermissionIfNeeded();
+			startMotion();
+			els.btnStart.textContent = "Running";
+		} catch (err) {
+			els.dbg.textContent = String(err && err.message ? err.message : err);
+		}
+	});
+
+	els.btnCal.addEventListener("click", () => {
+		// Calibration: set gravity estimate to the current reading so the “face up” mount is the baseline.
+		// Do this while holding the device steady in its mounted orientation.
+		if (!lastAincG) return;
+		g.x = lastAincG.x; g.y = lastAincG.y; g.z = lastAincG.z;
+		haveG = true;
+		aFwdLP = 0;
+		stNow = 0;
+		active = false;
+	});
+
+})();
+</script>
+</body>
+</html>
