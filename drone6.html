@@ -1,0 +1,642 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MIDI Meander Drone</title>
+<style>
+	body{margin:0;background:#0b0b12;color:#eee;font-family:system-ui}
+	.navbar{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#111120;border-bottom:1px solid #222;font-size:18px}
+	.navbtn{cursor:pointer;user-select:none}
+	.section{padding:16px 18px;border-bottom:1px solid #222}
+	h2{margin:0 0 10px 0;font-size:14px;color:#aaa}
+	.small{font-size:12px;color:#8e8ea8;line-height:1.35}
+	select,button,input{font-size:16px}
+	select,button{width:100%;padding:12px;border-radius:10px;border:1px solid #333;background:#141424;color:#fff}
+	button{cursor:pointer}
+	.row{margin-top:10px}
+	.sliderline{display:grid;grid-template-columns:64px 1fr 64px;gap:10px;align-items:center}
+	input[type="number"]{width:100%;padding:10px;border-radius:10px;border:1px solid #333;background:#141424;color:#fff}
+	input[type="range"]{width:100%}
+	.status{font-size:13px;color:#aaa;margin-top:10px}
+	.twocol{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+	.pill{display:inline-block;padding:2px 8px;border:1px solid #2a2a3f;border-radius:999px;background:#141424;font-size:12px;color:#b6b6d6}
+	.meterWrap{background:#0f0f1c;border:1px solid #25253a;border-radius:12px;padding:12px}
+	.meterTitle{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+	.grid{display:grid;grid-template-columns:1fr;gap:8px}
+	.chanRow{display:grid;grid-template-columns:44px 1fr 72px 62px;gap:10px;align-items:center}
+	.chanLbl{color:#cfcfea}
+	.bar{height:10px;border-radius:999px;background:#1a1a2e;overflow:hidden;border:1px solid #2a2a44}
+	.fill{height:100%;width:0%}
+	.mono{font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-size:12px;color:#c9c9e8}
+</style>
+</head>
+<body>
+
+<div class="navbar">
+	<div class="navbtn" id="navLeft">⬅</div>
+	<div>MIDI Meander Drone</div>
+	<div class="navbtn" id="navRight">➡</div>
+</div>
+
+<!-- Visual state -->
+<div class="section">
+	<div class="meterWrap">
+		<div class="meterTitle">
+			<div class="mono">Channel state (note + CC11)</div>
+			<div class="mono" id="voiceState">v1:A  v2:A</div>
+		</div>
+		<div class="grid" id="chanGrid"></div>
+		<div class="small" style="margin-top:8px">
+			Crossfade uses <span class="pill">CC11 (Expression)</span>. If your synth ignores CC11, change <code>CC_EXPR</code> to 7.
+			If fade-out still feels faster than fade-in, increase <span class="pill">Xfade Power</span> (below) toward 1000.
+		</div>
+	</div>
+</div>
+
+<div class="section">
+	<button id="initBtn">Init MIDI</button>
+	<div class="row">
+		<select id="midiOut"></select>
+	</div>
+	<div class="status" id="status">Idle</div>
+</div>
+
+<div class="section">
+	<h2>Key / Scale</h2>
+	<div class="twocol">
+		<select id="root"></select>
+		<select id="scale"></select>
+	</div>
+</div>
+
+<div class="section">
+	<h2>Center MIDI Note</h2>
+	<div class="sliderline">
+		<input id="centerMin" type="number" value="0">
+		<input id="center" type="range" min="0" max="127" value="60">
+		<input id="centerMax" type="number" value="127">
+	</div>
+</div>
+
+<div class="section">
+	<h2>Span (semitones around center)</h2>
+	<div class="sliderline">
+		<input id="spanMin" type="number" value="0">
+		<input id="span" type="range" min="0" max="240" value="36">
+		<input id="spanMax" type="number" value="240">
+	</div>
+</div>
+
+<div class="section">
+	<h2>Fade Time (ms)</h2>
+	<div class="sliderline">
+		<input id="fadeMin" type="number" value="0">
+		<input id="fade" type="range" min="0" max="10000" value="250">
+		<input id="fadeMax" type="number" value="10000">
+	</div>
+</div>
+
+<div class="section">
+	<h2>Voice 1 Change Interval (ms)</h2>
+	<div class="sliderline">
+		<input id="rate1Min" type="number" value="50">
+		<input id="rate1" type="range" min="50" max="30000" value="900">
+		<input id="rate1Max" type="number" value="30000">
+	</div>
+</div>
+
+<div class="section">
+	<h2>Voice 2 Change Interval (ms)</h2>
+	<div class="sliderline">
+		<input id="rate2Min" type="number" value="50">
+		<input id="rate2" type="range" min="50" max="30000" value="1200">
+		<input id="rate2Max" type="number" value="30000">
+	</div>
+</div>
+
+<div class="section">
+	<h2>Max Step Per Change (scale degrees)</h2>
+	<div class="sliderline">
+		<input id="stepMin" type="number" value="1">
+		<input id="stepMax" type="range" min="1" max="500" value="2">
+		<input id="stepMaxMax" type="number" value="500">
+	</div>
+</div>
+
+<div class="section">
+	<h2>Xfade Power (0=linear, 1000=equal-power)</h2>
+	<div class="sliderline">
+		<input id="powMin" type="number" value="0">
+		<input id="pow" type="range" min="0" max="1000" value="850">
+		<input id="powMax" type="number" value="1000">
+	</div>
+	<div class="small">Equal-power crossfade maintains perceived loudness during overlap (often fixes “fade-out feels faster”).</div>
+</div>
+
+<div class="section">
+	<h2>Small-Step Bias</h2>
+	<div class="sliderline">
+		<input id="biasMin" type="number" value="0">
+		<input id="bias" type="range" min="0" max="10000" value="6500">
+		<input id="biasMax" type="number" value="10000">
+	</div>
+</div>
+
+<div class="section">
+	<h2>Center Pull</h2>
+	<div class="sliderline">
+		<input id="pullMin" type="number" value="0">
+		<input id="pull" type="range" min="0" max="10000" value="3500">
+		<input id="pullMax" type="number" value="10000">
+	</div>
+</div>
+
+<div class="section">
+	<h2>Hold Probability (skip a change)</h2>
+	<div class="sliderline">
+		<input id="holdMin" type="number" value="0">
+		<input id="hold" type="range" min="0" max="10000" value="2500">
+		<input id="holdMax" type="number" value="10000">
+	</div>
+</div>
+
+<div class="section">
+	<h2>Timing Humanize (± ms)</h2>
+	<div class="sliderline">
+		<input id="jitMin" type="number" value="0">
+		<input id="jit" type="range" min="0" max="50000" value="80">
+		<input id="jitMax" type="number" value="50000">
+	</div>
+</div>
+
+<div class="section">
+	<h2>Velocity</h2>
+	<div class="sliderline">
+		<input id="velMin" type="number" value="1">
+		<input id="vel" type="range" min="1" max="127" value="80">
+		<input id="velMax" type="number" value="127">
+	</div>
+</div>
+
+<div class="section">
+	<h2>Voice 2 Interval Lock (degrees)</h2>
+	<div class="sliderline">
+		<input id="intMin" type="number" value="-500">
+		<input id="interval" type="range" min="-500" max="500" value="4">
+		<input id="intMax" type="number" value="500">
+	</div>
+	<div class="row">
+		<button id="lockBtn">Interval Lock: OFF</button>
+	</div>
+</div>
+
+<div class="section">
+	<button id="startBtn">Start</button>
+	<button id="stopBtn" class="row">Stop</button>
+</div>
+
+<script>
+let midiAccess=null, midiOut=null;
+const STATUS=document.getElementById("status");
+const voiceStateEl=document.getElementById("voiceState");
+
+function clamp(v,l,h){ return Math.max(l, Math.min(h, v)); }
+
+const CC_EXPR = 11;
+
+// ---------- Visual state ----------
+const NOTE_NAMES=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+function midiToName(n){
+	const pc=((n%12)+12)%12;
+	const oct=Math.floor(n/12)-1;
+	return NOTE_NAMES[pc]+oct;
+}
+const chanState = Array.from({length:17}, ()=>({note:null, cc11:0, last:"—"}));
+const chanGrid=document.getElementById("chanGrid");
+const chanRows={};
+
+function makeChanRow(ch){
+	const row=document.createElement("div");
+	row.className="chanRow";
+	const lbl=document.createElement("div");
+	lbl.className="chanLbl mono";
+	lbl.textContent="CH"+ch;
+
+	const note=document.createElement("div");
+	note.className="mono";
+	note.textContent="—";
+
+	const bar=document.createElement("div");
+	bar.className="bar";
+	const fill=document.createElement("div");
+	fill.className="fill";
+	fill.style.width="0%";
+	fill.style.background="#6f6fff";
+	bar.appendChild(fill);
+
+	const ccTxt=document.createElement("div");
+	ccTxt.className="mono";
+	ccTxt.textContent="0";
+
+	row.appendChild(lbl);
+	row.appendChild(note);
+	row.appendChild(bar);
+	row.appendChild(ccTxt);
+
+	chanGrid.appendChild(row);
+	chanRows[ch]={note, fill, ccTxt};
+}
+[1,2,3,4].forEach(makeChanRow);
+
+let uiDirty=false;
+function markUI(){
+	if(uiDirty) return;
+	uiDirty=true;
+	requestAnimationFrame(()=>{
+		uiDirty=false;
+		for(const ch of [1,2,3,4]){
+			const st=chanState[ch];
+			const noteStr = st.note===null ? "—" : `${midiToName(st.note)} (${st.note})`;
+			chanRows[ch].note.textContent = noteStr;
+			chanRows[ch].ccTxt.textContent = String(st.cc11|0);
+			chanRows[ch].fill.style.width = (clamp(st.cc11,0,127)/127*100).toFixed(1)+"%";
+		}
+	});
+}
+
+function noteOn(ch,n,v,ts=0){
+	chanState[ch].note=n|0;
+	chanState[ch].last="noteOn";
+	midiOut?.send([0x90|(ch-1), clamp(n|0,0,127), clamp(v|0,1,127)], ts||undefined);
+	markUI();
+}
+function noteOff(ch,n,ts=0){
+	// only clear if it matches current (avoids clearing if something else got turned on)
+	if(chanState[ch].note === (n|0)) chanState[ch].note=null;
+	chanState[ch].last="noteOff";
+	midiOut?.send([0x80|(ch-1), clamp(n|0,0,127), 0], ts||undefined);
+	markUI();
+}
+function cc(ch,num,val,ts=0){
+	if((num|0) === CC_EXPR) chanState[ch].cc11 = clamp(val|0,0,127);
+	chanState[ch].last="cc"+num;
+	midiOut?.send([0xB0|(ch-1), num&0x7F, clamp(val|0,0,127)], ts||undefined);
+	markUI();
+}
+
+// -------------------- URL nav arrows --------------------
+function adjustUrl(delta){
+	const path = window.location.pathname;
+	const m = path.match(/(\d+)(?!.*\d)/);
+	if(!m) return;
+	const num = parseInt(m[1],10);
+	const next = num + delta;
+	const newPath = path.replace(/(\d+)(?!.*\d)/, String(next));
+	window.location.href = newPath + window.location.search + window.location.hash;
+}
+document.getElementById("navLeft").onclick = ()=>adjustUrl(-1);
+document.getElementById("navRight").onclick = ()=>adjustUrl(1);
+
+// -------------------- Slider + min/max boxes --------------------
+function bindRange(idSlider, idMin, idMax){
+	const s=document.getElementById(idSlider);
+	const mn=document.getElementById(idMin);
+	const mx=document.getElementById(idMax);
+	function apply(){
+		let a=Number(mn.value), b=Number(mx.value);
+		if(!Number.isFinite(a)) a=Number(s.min);
+		if(!Number.isFinite(b)) b=Number(s.max);
+		if(a===b) b=a+1;
+		if(a>b){ const t=a; a=b; b=t; mn.value=a; mx.value=b; }
+		s.min=String(a); s.max=String(b);
+		const v=Number(s.value);
+		if(v<a) s.value=String(a);
+		if(v>b) s.value=String(b);
+	}
+	mn.addEventListener("change", apply);
+	mx.addEventListener("change", apply);
+	apply();
+	return s;
+}
+
+// -------------------- Key/scale + allowed notes --------------------
+const SCALES={
+	"Major (Ionian)":[0,2,4,5,7,9,11],
+	"Natural Minor (Aeolian)":[0,2,3,5,7,8,10],
+	"Dorian":[0,2,3,5,7,9,10],
+	"Phrygian":[0,1,3,5,7,8,10],
+	"Lydian":[0,2,4,6,7,9,11],
+	"Mixolydian":[0,2,4,5,7,9,10],
+	"Pentatonic Major":[0,2,4,7,9],
+	"Pentatonic Minor":[0,3,5,7,10],
+	"Harmonic Minor":[0,2,3,5,7,8,11]
+};
+
+const rootSel=document.getElementById("root");
+const scaleSel=document.getElementById("scale");
+for(let i=0;i<12;i++){
+	const o=document.createElement("option");
+	o.value=String(i); o.textContent=NOTE_NAMES[i];
+	rootSel.appendChild(o);
+}
+for(const k of Object.keys(SCALES)){
+	const o=document.createElement("option");
+	o.value=k; o.textContent=k;
+	scaleSel.appendChild(o);
+}
+rootSel.value="0";
+scaleSel.value="Major (Ionian)";
+
+function buildAllowedNotes(){
+	const rootPc=parseInt(rootSel.value,10);
+	const steps=SCALES[scaleSel.value];
+	const center=parseInt(slCenter.value,10);
+	const span=parseInt(slSpan.value,10);
+	const lo=clamp(center-span,0,127);
+	const hi=clamp(center+span,0,127);
+
+	const out=[];
+	for(let n=0;n<=127;n++){
+		if(n<lo||n>hi) continue;
+		const rel=(n%12-rootPc+12)%12;
+		if(steps.includes(rel)) out.push(n);
+	}
+	return out;
+}
+
+function nearestIndex(arr, midi){
+	let best=0, bestD=Infinity;
+	for(let i=0;i<arr.length;i++){
+		const d=Math.abs(arr[i]-midi);
+		if(d<bestD){bestD=d; best=i;}
+	}
+	return best;
+}
+
+// -------------------- Pleasant-walk step selection --------------------
+function pickStep(maxDeg, bias0to10000){
+	const b=clamp(bias0to10000,0,10000);
+	const power=1+(b/10000)*7; // 1..8
+	const mag=Math.max(1, Math.ceil((Math.random() ** power) * maxDeg));
+	return (Math.random()<0.5?-1:1)*mag;
+}
+
+// -------------------- Crossfade curve --------------------
+function gainsForRatio(r, pow0to1000){
+	// r: 0..1
+	const p=clamp(pow0to1000,0,1000)/1000;
+
+	// linear
+	const linTo=r;
+	const linFrom=1-r;
+
+	// equal-power
+	const epTo=Math.sin(r*Math.PI/2);
+	const epFrom=Math.cos(r*Math.PI/2);
+
+	// blend
+	const to = linTo*(1-p) + epTo*p;
+	const from = linFrom*(1-p) + epFrom*p;
+
+	return {from, to};
+}
+
+// -------------------- Structured A/B crossfade voice --------------------
+class StructuredVoice {
+	constructor(label, chA, chB, getRateMs){
+		this.label=label;
+		this.chA=chA; this.chB=chB;
+		this.getRateMs=getRateMs;
+
+		this.active="A";
+		this.noteA=null; this.noteB=null;
+		this.idx=0;
+
+		this.timer=null;
+		this.raf=null;
+	}
+
+	clearTimers(){
+		if(this.timer){ clearTimeout(this.timer); this.timer=null; }
+		if(this.raf){ cancelAnimationFrame(this.raf); this.raf=null; }
+	}
+
+	start(allowed, startIdx, vel, fadeMs){
+		this.clearTimers();
+		this.active="A";
+		this.idx=clamp(startIdx,0,allowed.length-1);
+
+		const note=allowed[this.idx];
+		this.noteA=note;
+		this.noteB=null;
+
+		// Step 1: note on, chA (expr 0)
+		cc(this.chA, CC_EXPR, 0);
+		cc(this.chB, CC_EXPR, 0);
+		noteOn(this.chA, note, vel);
+
+		// Step 2: chA 0->127 over fade
+		this.fadeOne(this.chA, 0, 127, fadeMs, ()=>{
+			this.scheduleNext(); // Step 3 wait begins AFTER fade-in completes
+		});
+	}
+
+	scheduleNext(){
+		this.clearTimers();
+		const base=this.getRateMs();
+		const jitter=parseInt(slJit.value,10);
+		const j=jitter ? (Math.random()*2-1)*jitter : 0;
+		const wait=Math.max(0, Math.round(base+j));
+		this.timer=setTimeout(()=>this.transition(), wait);
+	}
+
+	transition(){
+		const fadeMs=parseInt(slFade.value,10);
+		const vel=parseInt(slVel.value,10);
+
+		const hold=parseInt(slHold.value,10); // 0..10000
+		if(Math.random() < (hold/10000)){
+			this.scheduleNext();
+			return;
+		}
+
+		const allowed=currentAllowed;
+		if(!allowed || allowed.length<2){
+			this.scheduleNext();
+			return;
+		}
+
+		const centerMidi=parseInt(slCenter.value,10);
+		const centerIdx=nearestIndex(allowed, centerMidi);
+
+		const maxDeg=Math.max(1, parseInt(slStep.value,10));
+		const step=pickStep(maxDeg, parseInt(slBias.value,10));
+		let nextIdx=clamp(this.idx+step, 0, allowed.length-1);
+
+		const pull=parseInt(slPull.value,10); // 0..10000
+		if(Math.random() < (pull/10000)){
+			if(nextIdx < centerIdx) nextIdx=clamp(nextIdx+1,0,allowed.length-1);
+			else if(nextIdx > centerIdx) nextIdx=clamp(nextIdx-1,0,allowed.length-1);
+		}
+
+		this.idx=nextIdx;
+		const nextNote=allowed[nextIdx];
+
+		const fromSlot=this.active;
+		const toSlot=(fromSlot==="A")?"B":"A";
+		const fromCh=(fromSlot==="A")?this.chA:this.chB;
+		const toCh=(toSlot==="A")?this.chA:this.chB;
+
+		const oldNote=(fromSlot==="A")?this.noteA:this.noteB;
+
+		// Step 4: note on toCh (expr 0)
+		cc(toCh, CC_EXPR, 0);
+		noteOn(toCh, nextNote, vel);
+		if(toSlot==="A") this.noteA=nextNote; else this.noteB=nextNote;
+
+		// Step 5: crossfade (with optional equal-power curve)
+		this.crossfade(fromCh, toCh, fadeMs, ()=>{
+			// Step 6: note off old ONLY after fade completes
+			cc(fromCh, CC_EXPR, 0);
+			if(oldNote !== null) noteOff(fromCh, oldNote);
+			if(fromSlot==="A") this.noteA=null; else this.noteB=null;
+
+			this.active=toSlot;
+			this.scheduleNext();
+		});
+	}
+
+	fadeOne(ch, from, to, ms, done){
+		if(ms<=0){ cc(ch, CC_EXPR, to); done && done(); return; }
+		const t0=performance.now();
+		const t1=t0+ms;
+		const step=(t)=>{
+			const r=clamp((t-t0)/ms,0,1);
+			cc(ch, CC_EXPR, Math.round(from+(to-from)*r));
+			if(t<t1) this.raf=requestAnimationFrame(step);
+			else { this.raf=null; done && done(); }
+		};
+		this.raf=requestAnimationFrame(step);
+	}
+
+	crossfade(fromCh, toCh, ms, done){
+		if(ms<=0){
+			cc(fromCh, CC_EXPR, 0);
+			cc(toCh, CC_EXPR, 127);
+			done && done();
+			return;
+		}
+		const pow=parseInt(slPow.value,10);
+		const t0=performance.now();
+		const t1=t0+ms;
+		const step=(t)=>{
+			const r=clamp((t-t0)/ms,0,1);
+			const g=gainsForRatio(r, pow);
+			cc(fromCh, CC_EXPR, Math.round(127*g.from));
+			cc(toCh,   CC_EXPR, Math.round(127*g.to));
+			if(t<t1) this.raf=requestAnimationFrame(step);
+			else { this.raf=null; done && done(); }
+		};
+		this.raf=requestAnimationFrame(step);
+	}
+
+	stop(){
+		this.clearTimers();
+		if(this.noteA!==null) noteOff(this.chA,this.noteA);
+		if(this.noteB!==null) noteOff(this.chB,this.noteB);
+		this.noteA=null; this.noteB=null;
+		cc(this.chA, CC_EXPR, 0);
+		cc(this.chB, CC_EXPR, 0);
+	}
+}
+
+// -------------------- UI wiring --------------------
+const slCenter = bindRange("center","centerMin","centerMax");
+const slSpan   = bindRange("span","spanMin","spanMax");
+const slFade   = bindRange("fade","fadeMin","fadeMax");
+const slRate1  = bindRange("rate1","rate1Min","rate1Max");
+const slRate2  = bindRange("rate2","rate2Min","rate2Max");
+const slStep   = bindRange("stepMax","stepMin","stepMaxMax");
+const slPow    = bindRange("pow","powMin","powMax");
+const slBias   = bindRange("bias","biasMin","biasMax");
+const slPull   = bindRange("pull","pullMin","pullMax");
+const slHold   = bindRange("hold","holdMin","holdMax");
+const slJit    = bindRange("jit","jitMin","jitMax");
+const slVel    = bindRange("vel","velMin","velMax");
+const slInt    = bindRange("interval","intMin","intMax");
+
+let intervalLock=false;
+const lockBtn=document.getElementById("lockBtn");
+lockBtn.onclick=()=>{
+	intervalLock=!intervalLock;
+	lockBtn.textContent="Interval Lock: " + (intervalLock ? "ON" : "OFF");
+};
+
+let currentAllowed=[];
+function recomputeAllowed(){
+	currentAllowed=buildAllowedNotes();
+	if(currentAllowed.length<2){
+		STATUS.textContent="Scale range too small. Increase Span or adjust Center.";
+	}
+}
+rootSel.onchange=recomputeAllowed;
+scaleSel.onchange=recomputeAllowed;
+["input","change"].forEach(evt=>{
+	slCenter.addEventListener(evt,recomputeAllowed);
+	slSpan.addEventListener(evt,recomputeAllowed);
+});
+recomputeAllowed();
+
+// -------------------- Voices --------------------
+const voice1=new StructuredVoice("v1",1,2,()=>parseInt(slRate1.value,10));
+const voice2=new StructuredVoice("v2",3,4,()=>parseInt(slRate2.value,10));
+
+const originalVoice2Transition=voice2.transition.bind(voice2);
+voice2.transition=function(){
+	if(intervalLock && currentAllowed && currentAllowed.length){
+		const off=parseInt(slInt.value,10);
+		this.idx=clamp(voice1.idx+off, 0, currentAllowed.length-1);
+	}
+	return originalVoice2Transition();
+};
+
+function updateVoiceState(){
+	voiceStateEl.textContent = `v1:${voice1.active}  v2:${voice2.active}`;
+}
+const _origStart1=voice1.start.bind(voice1);
+voice1.start=function(...args){ const r=_origStart1(...args); updateVoiceState(); return r; };
+const _origStart2=voice2.start.bind(voice2);
+voice2.start=function(...args){ const r=_origStart2(...args); updateVoiceState(); return r; };
+const _origTrans1=voice1.transition.bind(voice1);
+voice1.transition=function(){ const r=_origTrans1(); updateVoiceState(); return r; };
+const _origTrans2=voice2.transition.bind(voice2);
+voice2.transition=function(){ const r=_origTrans2(); updateVoiceState(); return r; };
+
+// -------------------- MIDI init/start/stop --------------------
+document.getElementById("initBtn").onclick=async()=>{
+	if(!navigator.requestMIDIAccess){
+		STATUS.textContent="Web MIDI unsupported in this browser.";
+		return;
+	}
+	try{
+		midiAccess=await navigator.requestMIDIAccess({sysex:false});
+		const outs=Array.from(midiAccess.outputs.values());
+		const sel=document.getElementById("midiOut");
+		sel.innerHTML="";
+		outs.forEach(o=>{
+			const opt=document.createElement("option");
+			opt.value=o.id;
+			opt.textContent=o.name||"MIDI Output";
+			sel.appendChild(opt);
+		});
+		if(!outs.length){
+			STATUS.textContent="No MIDI outputs found.";
+			return;
+		}
+		sel.onchange=()=>{ midiOut=midiAccess.outputs.get(sel.value); };
+		sel.value=outs[0].id;
+		midiOut=outs[0];
+		STATUS.textContent="MIDI Ready.";
+	}catch(e){
+		STATUS.textContent="MIDI init failed: " + (e?.message || String
