@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>MIDI Meander (A/B Crossfade)</title>
+	<style>
+		:root { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+		body { margin: 16px; background: #0b0b0f; color: #eaeaf2; }
+		h1 { font-size: 18px; margin: 0 0 12px; }
+		.card { border: 1px solid #24243a; border-radius: 12px; padding: 12px; margin: 12px 0; background: #111121; }
+		.row { display: grid; grid-template-columns: 140px 1fr; gap: 10px; align-items: center; margin: 10px 0; }
+		label { color: #bdbdd6; font-size: 13px; }
+		select, input[type="number"], input[type="range"], button {
+			width: 100%; padding: 10px; border-radius: 10px; border: 1px solid #2c2c49;
+			background: #0f0f1c; color: #eaeaf2; font-size: 14px;
+		}
+		input[type="range"] { padding: 0; height: 34px; }
+		.small { font-size: 12px; color: #a7a7c7; }
+		.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+		.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #1b1b33; border: 1px solid #2c2c49; font-size: 12px; }
+		.btnrow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+		.ok { color: #8cf0a4; }
+		.warn { color: #ffd479; }
+		.err { color: #ff8e8e; }
+		code { background: #14142a; padding: 2px 6px; border-radius: 8px; border: 1px solid #2c2c49; }
+	</style>
+</head>
+<body>
+	<h1>MIDI Meander (2 voices, A/B crossfade per voice)</h1>
+	<div class="small">
+		<span class="badge">Voice 1</span> A=CH1, B=CH2 · <span class="badge">Voice 2</span> A=CH3, B=CH4
+		<br/>
+		Uses CC11 (Expression) for crossfading. Requires a synth that responds to CC11 per channel.
+	</div>
+
+	<div id="status" class="card small warn">
+		Status: Not started. Tap <b>Init MIDI</b>.
+	</div>
+
+	<div class="card">
+		<div class="btnrow">
+			<button id="btnInit">Init MIDI</button>
+			<button id="btnStart" disabled>Start</button>
+		</div>
+		<div style="height:10px"></div>
+		<div class="btnrow">
+			<button id="btnStop" disabled>Stop</button>
+			<button id="btnPanic" disabled>Panic (All Notes Off)</button>
+		</div>
+	</div>
+
+	<div class="card">
+		<div class="row">
+			<label for="midiOut">MIDI Output</label>
+			<select id="midiOut"></select>
+		</div>
+
+		<div class="grid2">
+			<div>
+				<div class="row">
+					<label for="root">Root</label>
+					<select id="root"></select>
+				</div>
+			</div>
+			<div>
+				<div class="row">
+					<label for="scale">Scale</label>
+					<select id="scale"></select>
+				</div>
+			</div>
+		</div>
+
+		<div class="grid2">
+			<div>
+				<div class="row">
+					<label for="rate">Rate of change (ms)</label>
+					<input id="rate" type="number" min="50" step="50" value="900" />
+				</div>
+			</div>
+			<div>
+				<div class="row">
+					<label for="fade">Fade length (ms)</label>
+					<input id="fade" type="number" min="0" step="10" value="250" />
+				</div>
+			</div>
+		</div>
+
+		<div class="grid2">
+			<div>
+				<div class="row">
+					<label for="center">Center note</label>
+					<select id="center"></select>
+				</div>
+				<div class="small">Meander stays near this pitch.</div>
+			</div>
+			<div>
+				<div class="row">
+					<label for="span">Span (semitones)</label>
+					<input id="span" type="number" min="6" step="1" value="24" />
+				</div>
+				<div class="small">Range around the center to constrain the walk.</div>
+			</div>
+		</div>
+
+		<div class="grid2">
+			<div>
+				<div class="row">
+					<label for="stepMax">Max step (degrees)</label>
+					<input id="stepMax" type="number" min="1" step="1" value="2" />
+				</div>
+				<div class="small">How far the random walk can jump in scale degrees.</div>
+			</div>
+			<div>
+				<div class="row">
+					<label for="vel">Velocity</label>
+					<input id="vel" type="range" min="1" max="127" value="96" />
+				</div>
+				<div class="small">Fixed velocity for both voices.</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="card small">
+		<div>Now playing:</div>
+		<div id="now" class="ok" style="margin-top:6px">—</div>
+	</div>
+
+<script>
+(() => {
+	// -----------------------------
+	// Web MIDI helpers
+	// -----------------------------
+	const STATUS = document.getElementById("status");
+	const NOW = document.getElementById("now");
+	const btnInit = document.getElementById("btnInit");
+	const btnStart = document.getElementById("btnStart");
+	const btnStop = document.getElementById("btnStop");
+	const btnPanic = document.getElementById("btnPanic");
+
+	const elOut = document.getElementById("midiOut");
+	const elRoot = document.getElementById("root");
+	const elScale = document.getElementById("scale");
+	const elRate = document.getElementById("rate");
+	const elFade = document.getElementById("fade");
+	const elCenter = document.getElementById("center");
+	const elSpan = document.getElementById("span");
+	const elStepMax = document.getElementById("stepMax");
+	const elVel = document.getElementById("vel");
+
+	let midiAccess = null;
+	let midiOut = null;
+
+	function setStatus(kind, msg) {
+		STATUS.className = "card small " + (kind === "ok" ? "ok" : kind === "err" ? "err" : "warn");
+		STATUS.textContent = "Status: " + msg;
+	}
+
+	function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+	function cc(channel1to16, ccNum, value, timestampMs = 0) {
+		if (!midiOut) return;
+		const ch = clamp(channel1to16, 1, 16) - 1;
+		midiOut.send([0xB0 | ch, ccNum & 0x7F, clamp(value | 0, 0, 127)], timestampMs || undefined);
+	}
+
+	function noteOn(channel1to16, note, velocity, timestampMs = 0) {
+		if (!midiOut) return;
+		const ch = clamp(channel1to16, 1, 16) - 1;
+		midiOut.send([0x90 | ch, clamp(note | 0, 0, 127), clamp(velocity | 0, 1, 127)], timestampMs || undefined);
+	}
+
+	function noteOff(channel1to16, note, timestampMs = 0) {
+		if (!midiOut) return;
+		const ch = clamp(channel1to16, 1, 16) - 1;
+		midiOut.send([0x80 | ch, clamp(note | 0, 0, 127), 0], timestampMs || undefined);
+	}
+
+	function allNotesOff() {
+		// CC123 = All Notes Off, CC120 = All Sound Off
+		for (let ch = 1; ch <= 16; ch++) {
+			cc(ch, 120, 0);
+			cc(ch, 123, 0);
+		}
+	}
+
+	// -----------------------------
+	// Scale / pitch utilities
+	// -----------------------------
+	const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+
+	const SCALES = {
+		"Major (Ionian)": [0,2,4,5,7,9,11],
+		"Natural Minor (Aeolian)": [0,2,3,5,7,8,10],
+		"Dorian": [0,2,3,5,7,9,10],
+		"Phrygian": [0,1,3,5,7,8,10],
+		"Lydian": [0,2,4,6,7,9,11],
+		"Mixolydian": [0,2,4,5,7,9,10],
+		"Locrian": [0,1,3,5,6,8,10],
+		"Pentatonic Major": [0,2,4,7,9],
+		"Pentatonic Minor": [0,3,5,7,10],
+		"Harmonic Minor": [0,2,3,5,7,8,11],
+		"Melodic Minor": [0,2,3,5,7,9,11],
+	};
+
+	function midiToName(n) {
+		const pc = ((n % 12) + 12) % 12;
+		const oct = Math.floor(n / 12) - 1;
+		return `${NOTE_NAMES[pc]}${oct}`;
+	}
+
+	function buildAllowedNotes(rootPc, scaleSteps, centerMidi, spanSemis) {
+		// Build notes across a few octaves, then filter to [center-span, center+span]
+		const lo = clamp(centerMidi - spanSemis, 0, 127);
+		const hi = clamp(centerMidi + spanSemis, 0, 127);
+
+		const candidates = [];
+		for (let n = 0; n <= 127; n++) {
+			const pc = n % 12;
+			const rel = (pc - rootPc + 12) % 12;
+			if (scaleSteps.includes(rel)) candidates.push(n);
+		}
+		const inRange = candidates.filter(n => n >= lo && n <= hi);
+		// Ensure sorted, unique
+		return Array.from(new Set(inRange)).sort((a,b) => a-b);
+	}
+
+	function nearestIndexForMidi(allowed, midiNote) {
+		let best = 0;
+		let bestDist = Infinity;
+		for (let i = 0; i < allowed.length; i++) {
+			const d = Math.abs(allowed[i] - midiNote);
+			if (d < bestDist) { bestDist = d; best = i; }
+		}
+		return best;
+	}
+
+	// -----------------------------
+	// A/B Crossfade Voice
+	// -----------------------------
+	// Uses CC11 Expression for volume-like control (many synths treat it as a secondary volume).
+	const CC_EXPR = 11;
+
+	class ABVoice {
+		constructor(label, chA, chB) {
+			this.label = label;
+			this.chA = chA;
+			this.chB = chB;
+
+			this.activeSlot = "A"; // which slot currently holds the "foreground" note
+			this.noteA = null;
+			this.noteB = null;
+
+			// Start with A full, B silent (expression)
+			this.exprA = 127;
+			this.exprB = 0;
+		}
+
+		applyExpr() {
+			cc(this.chA, CC_EXPR, this.exprA);
+			cc(this.chB, CC_EXPR, this.exprB);
+		}
+
+		start(initialNote, velocity) {
+			// Put initial note on active slot (A)
+			this.activeSlot = "A";
+			this.noteA = initialNote;
+			this.noteB = null;
+
+			this.exprA = 127;
+			this.exprB = 0;
+			this.applyExpr();
+
+			noteOn(this.chA, initialNote, velocity);
+		}
+
+		stop() {
+			if (this.noteA !== null) noteOff(this.chA, this.noteA);
+			if (this.noteB !== null) noteOff(this.chB, this.noteB);
+			this.noteA = null;
+			this.noteB = null;
+
+			// reset expressions
+			this.exprA = 127;
+			this.exprB = 0;
+			this.applyExpr();
+		}
+
+		crossfadeTo(nextNote, velocity, fadeMs) {
+			// No change
+			const currentNote = (this.activeSlot === "A") ? this.noteA : this.noteB;
+			if (currentNote === nextNote) return;
+
+			const fromSlot = this.activeSlot;
+			const toSlot = (fromSlot === "A") ? "B" : "A";
+
+			const fromCh = (fromSlot === "A") ? this.chA : this.chB;
+			const toCh   = (toSlot === "A")   ? this.chA : this.chB;
+
+			// Start next note on the other slot at 0 expression
+			if (toSlot === "A") {
+				this.noteA = nextNote;
+				this.exprA = 0;
+			} else {
+				this.noteB = nextNote;
+				this.exprB = 0;
+			}
+			noteOn(toCh, nextNote, velocity);
+
+			// If fade is 0, just swap immediately
+			if (fadeMs <= 0) {
+				// Foreground toSlot
+				if (fromSlot === "A") {
+					this.exprA = 0; this.exprB = 127;
+					this.applyExpr();
+					if (this.noteA !== null) noteOff(this.chA, this.noteA);
+					this.noteA = null;
+				} else {
+					this.exprB = 0; this.exprA = 127;
+					this.applyExpr();
+					if (this.noteB !== null) noteOff(this.chB, this.noteB);
+					this.noteB = null;
+				}
+				this.activeSlot = toSlot;
+				return;
+			}
+
+			// Smooth crossfade: ramp expressions with requestAnimationFrame,
+			// sending CC at ~30 Hz to avoid spamming MIDI too hard.
+			const t0 = performance.now();
+			const t1 = t0 + fadeMs;
+
+			let lastSend = 0;
+			const sendInterval = 33; // ms (~30Hz)
+
+			const step = (tNow) => {
+				const t = clamp((tNow - t0) / fadeMs, 0, 1);
+				const a = Math.round(127 * (1 - t));
+				const b = Math.round(127 * t);
+
+				if (fromSlot === "A") {
+					this.exprA = a;
+					this.exprB = b;
+				} else {
+					this.exprB = a;
+					this.exprA = b;
+				}
+
+				if (tNow - lastSend >= sendInterval || t >= 1) {
+					lastSend = tNow;
+					this.applyExpr();
+				}
+
+				if (tNow < t1) {
+					requestAnimationFrame(step);
+				} else {
+					// Fade complete: turn off the old note, keep the new as active
+					if (fromSlot === "A") {
+						if (this.noteA !== null) noteOff(this.chA, this.noteA);
+						this.noteA = null;
+						this.exprA = 0;
+						this.exprB = 127;
+					} else {
+						if (this.noteB !== null) noteOff(this.chB, this.noteB);
+						this.noteB = null;
+						this.exprB = 0;
+						this.exprA = 127;
+					}
+					this.applyExpr();
+					this.activeSlot = toSlot;
+				}
+			};
+
+			requestAnimationFrame(step);
+		}
+
+		currentNote() {
+			return (this.activeSlot === "A") ? this.noteA : this.noteB;
+		}
+	}
+
+	// -----------------------------
+	// Meander engine (random walk in scale degrees)
+	// -----------------------------
+	let running = false;
+	let timer = null;
+
+	const voice1 = new ABVoice("Voice 1", 1, 2);
+	const voice2 = new ABVoice("Voice 2", 3, 4);
+
+	let allowedNotes = [];
+	let idx1 = 0;
+	let idx2 = 0;
+
+	function randInt(lo, hi) {
+		return Math.floor(Math.random() * (hi - lo + 1)) + lo;
+	}
+
+	function computeAllowed() {
+		const rootPc = parseInt(elRoot.value, 10);
+		const scaleName = elScale.value;
+		const steps = SCALES[scaleName];
+		const centerMidi = parseInt(elCenter.value, 10);
+		const span = parseInt(elSpan.value, 10);
+
+		allowedNotes = buildAllowedNotes(rootPc, steps, centerMidi, span);
+
+		if (allowedNotes.length < 2) {
+			setStatus("err", "Scale range too small (no valid notes). Increase span or change center.");
+			return false;
+		}
+		return true;
+	}
+
+	function pickStartIndices() {
+		const centerMidi = parseInt(elCenter.value, 10);
+		const base = nearestIndexForMidi(allowedNotes, centerMidi);
+
+		// Two voices offset a bit so they don't always collide
+		idx1 = clamp(base, 0, allowedNotes.length - 1);
+		idx2 = clamp(base + Math.floor(allowedNotes.length / 6), 0, allowedNotes.length - 1);
+	}
+
+	function tick() {
+		if (!running) return;
+
+		const rateMs = clamp(parseInt(elRate.value, 10) || 900, 50, 600000);
+		const fadeMs = clamp(parseInt(elFade.value, 10) || 0, 0, 600000);
+		const stepMax = clamp(parseInt(elStepMax.value, 10) || 2, 1, 12);
+		const vel = clamp(parseInt(elVel.value, 10) || 96, 1, 127);
+
+		// random walk in scale-degree space
+		const step1 = randInt(-stepMax, stepMax) || 1;
+		const step2 = randInt(-stepMax, stepMax) || -1;
+
+		idx1 = clamp(idx1 + step1, 0, allowedNotes.length - 1);
+		idx2 = clamp(idx2 + step2, 0, allowedNotes.length - 1);
+
+		const n1 = allowedNotes[idx1];
+		const n2 = allowedNotes[idx2];
+
+		voice1.crossfadeTo(n1, vel, fadeMs);
+		voice2.crossfadeTo(n2, vel, fadeMs);
+
+		NOW.textContent =
+			`Voice1: ${midiToName(n1)}  |  Voice2: ${midiToName(n2)}   (rate=${rateMs}ms, fade=${fadeMs}ms)`;
+
+		timer = setTimeout(tick, rateMs);
+	}
+
+	function start() {
+		if (!midiOut) {
+			setStatus("err", "No MIDI output selected.");
+			return;
+		}
+		if (!computeAllowed()) return;
+
+		allNotesOff(); // clean slate
+		pickStartIndices();
+
+		const vel = clamp(parseInt(elVel.value, 10) || 96, 1, 127);
+		const n1 = allowedNotes[idx1];
+		const n2 = allowedNotes[idx2];
+
+		voice1.start(n1, vel);
+		voice2.start(n2, vel);
+
+		running = true;
+		btnStart.disabled = true;
+		btnStop.disabled = false;
+		btnPanic.disabled = false;
+
+		setStatus("ok", "Running.");
+		NOW.textContent = `Voice1: ${midiToName(n1)}  |  Voice2: ${midiToName(n2)}`;
+
+		// schedule first change
+		const rateMs = clamp(parseInt(elRate.value, 10) || 900, 50, 600000);
+		timer = setTimeout(tick, rateMs);
+	}
+
+	function stop() {
+		running = false;
+		if (timer) { clearTimeout(timer); timer = null; }
+
+		voice1.stop();
+		voice2.stop();
+		allNotesOff();
+
+		btnStart.disabled = false;
+		btnStop.disabled = true;
+		btnPanic.disabled = true;
+
+		setStatus("warn", "Stopped.");
+		NOW.textContent = "—";
+	}
+
+	// -----------------------------
+	// UI population
+	// -----------------------------
+	function fillSelect(el, options, getLabel = (x)=>String(x), getValue = (x)=>String(x)) {
+		el.innerHTML = "";
+		for (const o of options) {
+			const opt = document.createElement("option");
+			opt.value = getValue(o);
+			opt.textContent = getLabel(o);
+			el.appendChild(opt);
+		}
+	}
+
+	function initPitchUI() {
+		fillSelect(elRoot, NOTE_NAMES.map((n,i)=>({n,i})), x=>x.n, x=>String(x.i));
+		elRoot.value = "0"; // C
+
+		const scaleNames = Object.keys(SCALES);
+		fillSelect(elScale, scaleNames);
+		elScale.value = "Major (Ionian)";
+
+		const centers = [];
+		// Offer a useful range for phone synths; tweak as needed
+		for (let n = 36; n <= 96; n++) centers.push(n);
+		fillSelect(elCenter, centers, n=>`${midiToName(n)} (${n})`, n=>String(n));
+		elCenter.value = "60"; // C4
+	}
+
+	initPitchUI();
+
+	// Recompute allowed when relevant knobs move (while stopped)
+	[elRoot, elScale, elCenter, elSpan].forEach(el => {
+		el.addEventListener("change", () => {
+			if (!running) computeAllowed();
+		});
+	});
+
+	// -----------------------------
+	// MIDI init / device selection
+	// -----------------------------
+	async function initMIDI() {
+		try {
+			if (!navigator.requestMIDIAccess) {
+				setStatus("err", "Web MIDI not available in this browser. Try Chrome on Android; Web MIDI support can vary.");
+				return;
+			}
+
+			midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+
+			const outs = Array.from(midiAccess.outputs.values());
+			if (outs.length === 0) {
+				setStatus("err", "No MIDI outputs found. (On Android, you may need a USB MIDI interface + an OTG adapter.)");
+				return;
+			}
+
+			fillSelect(elOut, outs, o => `${o.name || "MIDI Out"}${o.manufacturer ? " — " + o.manufacturer : ""}`, o => o.id);
+
+			// auto-select first
+			elOut.value = outs[0].id;
+			midiOut = midiAccess.outputs.get(elOut.value) || null;
+
+			elOut.addEventListener("change", () => {
+				midiOut = midiAccess.outputs.get(elOut.value) || null;
+				if (running) {
+					stop();
+				}
+			});
+
+			btnStart.disabled = false;
+			btnPanic.disabled = false;
+			setStatus("ok", "MIDI ready. Select output and tap Start.");
+		} catch (e) {
+			setStatus("err", "Failed to init MIDI: " + (e && e.message ? e.message : String(e)));
+		}
+	}
+
+	// Buttons
+	btnInit.addEventListener("click", initMIDI);
+	btnStart.addEventListener("click", start);
+	btnStop.addEventListener("click", stop);
+	btnPanic.addEventListener("click", () => {
+		allNotesOff();
+		setStatus("ok", "Sent All Notes Off.");
+	});
+
+	// Safety: stop on page hide
+	document.addEventListener("visibilitychange", () => {
+		if (document.hidden && running) stop();
+	});
+})();
+</script>
+</body>
+  </html>
