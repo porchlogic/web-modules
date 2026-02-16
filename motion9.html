@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+	<title>Motion Feature Engine (DeviceMotion)</title>
+	<style>
+		:root {
+			--bg: #0b0d12;
+			--panel: #121727;
+			--panel2: #0f1422;
+			--text: #e8ecff;
+			--muted: #9aa6d6;
+			--accent: #7aa2ff;
+			--good: #3ddc97;
+			--warn: #ffc857;
+			--bad: #ff5c77;
+			--grid: rgba(255,255,255,0.08);
+		}
+		html, body { height: 100%; }
+		body {
+			margin: 0;
+			font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+			background: radial-gradient(1200px 700px at 40% 10%, rgba(122,162,255,0.18), transparent 60%),
+						radial-gradient(900px 600px at 80% 80%, rgba(61,220,151,0.12), transparent 55%),
+						var(--bg);
+			color: var(--text);
+		}
+		.wrap {
+			max-width: 1100px;
+			margin: 0 auto;
+			padding: 16px;
+			box-sizing: border-box;
+		}
+		.header {
+			display: flex;
+			gap: 12px;
+			align-items: center;
+			justify-content: space-between;
+			margin-bottom: 12px;
+			flex-wrap: wrap;
+		}
+		.title {
+			display: flex;
+			flex-direction: column;
+			gap: 2px;
+		}
+		h1 {
+			font-size: 18px;
+			margin: 0;
+			letter-spacing: 0.2px;
+		}
+		.sub {
+			font-size: 12px;
+			color: var(--muted);
+		}
+		.controls {
+			display: flex;
+			gap: 10px;
+			align-items: center;
+			flex-wrap: wrap;
+		}
+		button {
+			appearance: none;
+			border: 1px solid rgba(255,255,255,0.12);
+			background: linear-gradient(180deg, rgba(122,162,255,0.18), rgba(122,162,255,0.08));
+			color: var(--text);
+			padding: 10px 12px;
+			border-radius: 12px;
+			cursor: pointer;
+			font-weight: 600;
+		}
+		button:active { transform: translateY(1px); }
+		button.secondary {
+			background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+		}
+		.badge {
+			font-size: 12px;
+			padding: 6px 10px;
+			border-radius: 999px;
+			border: 1px solid rgba(255,255,255,0.12);
+			background: rgba(255,255,255,0.04);
+			color: var(--muted);
+		}
+		.grid {
+			display: grid;
+			grid-template-columns: 1.2fr 0.8fr;
+			gap: 12px;
+		}
+		@media (max-width: 920px) {
+			.grid { grid-template-columns: 1fr; }
+		}
+		.card {
+			background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+			border: 1px solid rgba(255,255,255,0.10);
+			border-radius: 16px;
+			padding: 12px;
+			box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+		}
+		.card h2 {
+			margin: 0 0 10px 0;
+			font-size: 13px;
+			color: var(--muted);
+			font-weight: 700;
+			letter-spacing: 0.35px;
+			text-transform: uppercase;
+		}
+		.kv {
+			display: grid;
+			grid-template-columns: 1fr auto;
+			gap: 8px 12px;
+			align-items: baseline;
+		}
+		.k { color: var(--muted); font-size: 12px; }
+		.v { font-variant-numeric: tabular-nums; font-size: 13px; }
+		.small { font-size: 11px; color: var(--muted); }
+		.row {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 12px;
+		}
+		@media (max-width: 920px) {
+			.row { grid-template-columns: 1fr; }
+		}
+		canvas {
+			width: 100%;
+			height: 220px;
+			border-radius: 14px;
+			background: linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.10));
+			border: 1px solid rgba(255,255,255,0.08);
+		}
+		.spark {
+			height: 54px;
+		}
+		.bar {
+			height: 10px;
+			background: rgba(255,255,255,0.06);
+			border-radius: 999px;
+			overflow: hidden;
+			border: 1px solid rgba(255,255,255,0.08);
+		}
+		.bar > div {
+			height: 100%;
+			width: 0%;
+			background: linear-gradient(90deg, rgba(122,162,255,0.9), rgba(61,220,151,0.9));
+			border-radius: 999px;
+		}
+		.legend {
+			display: flex;
+			gap: 10px;
+			flex-wrap: wrap;
+			font-size: 12px;
+			color: var(--muted);
+			margin-top: 10px;
+		}
+		.dot {
+			width: 10px;
+			height: 10px;
+			border-radius: 50%;
+			display: inline-block;
+			margin-right: 6px;
+			vertical-align: -1px;
+			background: var(--accent);
+		}
+		.dot.good { background: var(--good); }
+		.dot.warn { background: var(--warn); }
+		.dot.bad { background: var(--bad); }
+		.footer {
+			margin-top: 12px;
+			color: var(--muted);
+			font-size: 12px;
+			line-height: 1.35;
+		}
+		.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+	</style>
+</head>
+<body>
+	<div class="wrap">
+		<div class="header">
+			<div class="title">
+				<h1>Motion Feature Engine</h1>
+				<div class="sub">Deterministic “motion intelligence” from raw device sensors (web-only, zero deps)</div>
+			</div>
+			<div class="controls">
+				<button id="btnPermission">Enable Motion Sensors</button>
+				<button id="btnPause" class="secondary">Pause</button>
+				<span class="badge" id="status">status: idle</span>
+				<span class="badge mono" id="rate">~0 Hz</span>
+			</div>
+		</div>
+
+		<div class="grid">
+			<div class="card">
+				<h2>Live signals</h2>
+				<canvas id="scope" width="1100" height="260"></canvas>
+				<div class="legend">
+					<span><span class="dot"></span>lin accel |a| (m/s²)</span>
+					<span><span class="dot good"></span>energy (RMS)</span>
+					<span><span class="dot warn"></span>periodicity</span>
+					<span><span class="dot bad"></span>beat likelihood</span>
+				</div>
+			</div>
+
+			<div class="row">
+				<div class="card">
+					<h2>Motion features</h2>
+					<div class="kv">
+						<div class="k">Idle confidence</div>
+						<div class="v"><span id="idleConf">0.00</span></div>
+
+						<div class="k">Energy level (RMS, 1.0s)</div>
+						<div class="v"><span id="energy">0.00</span></div>
+
+						<div class="k">Smoothness (1 / jitter)</div>
+						<div class="v"><span id="smooth">0.00</span></div>
+
+						<div class="k">Jerk (RMS, 0.5s)</div>
+						<div class="v"><span id="jerk">0.00</span></div>
+
+						<div class="k">Periodicity (0–1)</div>
+						<div class="v"><span id="period">0.00</span> <span class="small mono" id="periodHz"></span></div>
+
+						<div class="k">Beat likelihood (0–1)</div>
+						<div class="v"><span id="beat">0.00</span></div>
+
+						<div class="k">Dominant axis</div>
+						<div class="v"><span id="axis">—</span></div>
+
+						<div class="k">Rotational intensity (deg/s)</div>
+						<div class="v"><span id="rot">0.0</span></div>
+
+						<div class="k">Cumulative drift (XY)</div>
+						<div class="v mono"><span id="drift">0.00, 0.00</span></div>
+					</div>
+
+					<div style="margin-top:12px">
+						<div class="k" style="margin-bottom:6px">Energy</div>
+						<div class="bar"><div id="barEnergy"></div></div>
+					</div>
+					<div style="margin-top:10px">
+						<div class="k" style="margin-bottom:6px">Idle confidence</div>
+						<div class="bar"><div id="barIdle"></div></div>
+					</div>
+					<div style="margin-top:10px">
+						<div class="k" style="margin-bottom:6px">Beat likelihood</div>
+						<div class="bar"><div id="barBeat"></div></div>
+					</div>
+
+					<div class="footer">
+						Tip: iOS requires a user gesture. Tap <span class="mono">Enable Motion Sensors</span>. If nothing updates, check Safari settings for Motion &amp; Orientation access.
+					</div>
+				</div>
+
+				<div class="card">
+					<h2>Raw snapshot</h2>
+					<div class="kv">
+						<div class="k">Accel (m/s²)</div>
+						<div class="v mono" id="acc">0,0,0</div>
+
+						<div class="k">Lin accel (m/s²)</div>
+						<div class="v mono" id="lin">0,0,0</div>
+
+						<div class="k">Gravity est (m/s²)</div>
+						<div class="v mono" id="grav">0,0,0</div>
+
+						<div class="k">RotationRate (deg/s)</div>
+						<div class="v mono" id="gyro">0,0,0</div>
+
+						<div class="k">Orientation (°)</div>
+						<div class="v mono" id="ori">—</div>
+
+						<div class="k">Notes</div>
+						<div class="v small">
+							Uses a simple low-pass gravity estimator + windowed stats + autocorrelation periodicity.
+							Drift integrates linear accel with strong decay (a “feel” signal, not physical position).
+						</div>
+					</div>
+
+					<div style="margin-top:12px">
+						<h2>Settings</h2>
+						<div class="kv">
+							<div class="k">Gravity LPF (higher = slower)</div>
+							<div class="v">
+								<input id="alpha" type="range" min="0.80" max="0.995" step="0.001" value="0.94" style="width:220px; vertical-align:middle" />
+								<span class="mono" id="alphaV">0.940</span>
+							</div>
+
+							<div class="k">Idle threshold (m/s²)</div>
+							<div class="v">
+								<input id="idleThr" type="range" min="0.02" max="0.80" step="0.01" value="0.12" style="width:220px; vertical-align:middle" />
+								<span class="mono" id="idleThrV">0.12</span>
+							</div>
+
+							<div class="k">Energy display scale</div>
+							<div class="v">
+								<input id="energyScale" type="range" min="0.5" max="8.0" step="0.1" value="2.5" style="width:220px; vertical-align:middle" />
+								<span class="mono" id="energyScaleV">2.5</span>
+							</div>
+
+							<div class="k">Beat band (Hz)</div>
+							<div class="v mono">
+								<span id="beatBand">0.7–2.5</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="footer">
+						If your browser provides <span class="mono">accelerationIncludingGravity</span> but not <span class="mono">acceleration</span>, this file derives linear acceleration by estimating gravity.
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+<script>
+(() => {
+	"use strict";
+
+	// ---------- Utilities ----------
+	const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+	const lerp = (a, b, t) => a + (b - a) * t;
+	const mag3 = (x, y, z) => Math.hypot(x, y, z);
+	const fmt = (x, n=2) => (Number.isFinite(x) ? x.toFixed(n) : "—");
+	const fmt3 = (x, y, z, n=2) => `${fmt(x,n)}, ${fmt(y,n)}, ${fmt(z,n)}`;
+	const nowMs = () => performance.now();
+
+	function rms(arr) {
+		if (!arr.length) return 0;
+		let s = 0;
+		for (let i = 0; i < arr.length; i++) s += arr[i] * arr[i];
+		return Math.sqrt(s / arr.length);
+	}
+
+	function mean(arr) {
+		if (!arr.length) return 0;
+		let s = 0;
+		for (let i = 0; i < arr.length; i++) s += arr[i];
+		return s / arr.length;
+	}
+
+	function stdev(arr) {
+		if (arr.length < 2) return 0;
+		const m = mean(arr);
+		let s = 0;
+		for (let i = 0; i < arr.length; i++) {
+			const d = arr[i] - m;
+			s += d * d;
+		}
+		return Math.sqrt(s / (arr.length - 1));
+	}
+
+	// Normalized autocorrelation peak search in a band of lags
+	function autocorrPeriodicity(samples, fs, hzMin, hzMax) {
+		// hz range => lag range
+		// lag = fs / hz
+		if (samples.length < 16) return { score: 0, hz: 0 };
+
+		const n = samples.length;
+		// Remove mean
+		let m = 0;
+		for (let i = 0; i < n; i++) m += samples[i];
+		m /= n;
+
+		const x = new Float32Array(n);
+		let energy = 0;
+		for (let i = 0; i < n; i++) {
+			const v = samples[i] - m;
+			x[i] = v;
+			energy += v * v;
+		}
+		if (energy <= 1e-9) return { score: 0, hz: 0 };
+
+		const lagMin = Math.max(2, Math.floor(fs / hzMax));
+		const lagMax = Math.min(n - 2, Math.floor(fs / hzMin));
+		if (lagMax <= lagMin) return { score: 0, hz: 0 };
+
+		let best = -1;
+		let bestLag = 0;
+
+		// Compute correlation for each lag (O(n^2) but with small windows it's fine)
+		for (let lag = lagMin; lag <= lagMax; lag++) {
+			let c = 0;
+			for (let i = 0; i < n - lag; i++) c += x[i] * x[i + lag];
+			const norm = c / energy; // approx normalized to [0,1]
+			if (norm > best) {
+				best = norm;
+				bestLag = lag;
+			}
+		}
+
+		const score = clamp((best + 1) * 0.5, 0, 1); // map [-1,1] -> [0,1]
+		const hz = bestLag > 0 ? (fs / bestLag) : 0;
+		return { score, hz };
+	}
+
+	// ---------- UI ----------
+	const $ = (id) => document.getElementById(id);
+
+	const el = {
+		btnPermission: $("btnPermission"),
+		btnPause: $("btnPause"),
+		status: $("status"),
+		rate: $("rate"),
+
+		scope: $("scope"),
+		ctx: $("scope").getContext("2d"),
+
+		acc: $("acc"),
+		lin: $("lin"),
+		grav: $("grav"),
+		gyro: $("gyro"),
+		ori: $("ori"),
+
+		idleConf: $("idleConf"),
+		energy: $("energy"),
+		smooth: $("smooth"),
+		jerk: $("jerk"),
+		period: $("period"),
+		periodHz: $("periodHz"),
+		beat: $("beat"),
+		axis: $("axis"),
+		rot: $("rot"),
+		drift: $("drift"),
+
+		barEnergy: $("barEnergy"),
+		barIdle: $("barIdle"),
+		barBeat: $("barBeat"),
+
+		alpha: $("alpha"),
+		alphaV: $("alphaV"),
+		idleThr: $("idleThr"),
+		idleThrV: $("idleThrV"),
+		energyScale: $("energyScale"),
+		energyScaleV: $("energyScaleV"),
+		beatBand: $("beatBand"),
+	};
+
+	// ---------- Engine state ----------
+	let running = true;
+	let hasMotion = false;
+	let lastT = 0;
+	let hzEMA = 0;
+
+	// Gravity estimator + derived linear acceleration
+	const g = { x: 0, y: 0, z: 0 };
+	let alpha = parseFloat(el.alpha.value); // higher => slower gravity update
+
+	// “Cumulative drift” (feel signal)
+	let driftX = 0, driftY = 0;
+	let velX = 0, velY = 0;
+
+	// Windows (in seconds)
+	const WIN_ENERGY = 1.0;
+	const WIN_JERK = 0.5;
+	const WIN_PERIOD = 1.8; // bigger window helps periodicity
+
+	// Beat band (Hz) for “beat likelihood” (rough rhythmic movement)
+	const BEAT_HZ_MIN = 0.7;
+	const BEAT_HZ_MAX = 2.5;
+
+	el.beatBand.textContent = `${BEAT_HZ_MIN.toFixed(1)}–${BEAT_HZ_MAX.toFixed(1)}`;
+
+	// Rolling buffers
+	const buf = {
+		t: [],
+		linMag: [],
+		linX: [],
+		linY: [],
+		linZ: [],
+		jerkMag: [],
+		rotMag: [],
+	};
+
+	// Scope buffers (for drawing)
+	const scope = {
+		linMag: new Float32Array(480),
+		energy: new Float32Array(480),
+		period: new Float32Array(480),
+		beat: new Float32Array(480),
+		i: 0
+	};
+
+	function pushScope(arr, v) {
+		arr[scope.i] = v;
+	}
+
+	function advanceScope() {
+		scope.i = (scope.i + 1) % scope.linMag.length;
+	}
+
+	function pruneBuffers(now, seconds) {
+		const cutoff = now - seconds * 1000;
+		while (buf.t.length && buf.t[0] < cutoff) {
+			buf.t.shift();
+			buf.linMag.shift();
+			buf.linX.shift();
+			buf.linY.shift();
+			buf.linZ.shift();
+			buf.jerkMag.shift();
+			buf.rotMag.shift();
+		}
+	}
+
+	// ---------- Feature extraction ----------
+	function computeFeatures(fsEstimate) {
+		const n = buf.t.length;
+		if (n < 6) {
+			return {
+				idleConf: 0,
+				energy: 0,
+				jerk: 0,
+				smooth: 0,
+				period: 0,
+				periodHz: 0,
+				beat: 0,
+				axis: "—",
+				rot: 0,
+				driftX, driftY
+			};
+		}
+
+		// Energy: RMS of linMag over last WIN_ENERGY seconds
+		const now = buf.t[n - 1];
+		const cutoffE = now - WIN_ENERGY * 1000;
+		let startE = 0;
+		while (startE < n && buf.t[startE] < cutoffE) startE++;
+		const energy = rms(buf.linMag.slice(startE));
+
+		// Jerk: RMS of jerkMag over last WIN_JERK seconds
+		const cutoffJ = now - WIN_JERK * 1000;
+		let startJ = 0;
+		while (startJ < n && buf.t[startJ] < cutoffJ) startJ++;
+		const jerk = rms(buf.jerkMag.slice(startJ));
+
+		// Smoothness: inversely related to jerk variability
+		const jerkStd = stdev(buf.jerkMag.slice(startJ));
+		const smooth = 1 / (1e-3 + jerk + 0.5 * jerkStd);
+
+		// Periodicity: autocorrelation peak score over last WIN_PERIOD seconds using linMag
+		const cutoffP = now - WIN_PERIOD * 1000;
+		let startP = 0;
+		while (startP < n && buf.t[startP] < cutoffP) startP++;
+		const seg = buf.linMag.slice(startP);
+
+		// Estimate sampling rate if not provided
+		let fs = fsEstimate;
+		if (!fs || !Number.isFinite(fs) || fs <= 0) {
+			const dt = (buf.t[n - 1] - buf.t[Math.max(0, n - 20)]) / Math.max(1, Math.min(19, n - 1));
+			fs = dt > 0 ? 1000 / dt : 60;
+		}
+		const { score: period, hz: periodHz } = autocorrPeriodicity(seg, fs, 0.4, 6.0);
+
+		// Beat likelihood: periodicity within beat band + energy gate
+		const inBeatBand = (periodHz >= BEAT_HZ_MIN && periodHz <= BEAT_HZ_MAX) ? 1 : 0;
+		// Energy gate: if energy is tiny, beat should be tiny even if corr spikes
+		const energyGate = clamp((energy - 0.06) / 0.45, 0, 1);
+		const beat = clamp(period * inBeatBand * (0.35 + 0.65 * energyGate), 0, 1);
+
+		// Dominant axis (absolute mean over last WIN_ENERGY)
+		const mx = mean(buf.linX.slice(startE).map(v => Math.abs(v)));
+		const my = mean(buf.linY.slice(startE).map(v => Math.abs(v)));
+		const mz = mean(buf.linZ.slice(startE).map(v => Math.abs(v)));
+		let axis = "X";
+		let best = mx;
+		if (my > best) { best = my; axis = "Y"; }
+		if (mz > best) { best = mz; axis = "Z"; }
+
+		// Rotational intensity: RMS of rotMag over last WIN_ENERGY
+		const rot = rms(buf.rotMag.slice(startE));
+
+		// Idle confidence: based on low energy + low jerk
+		const idleThr = parseFloat(el.idleThr.value);
+		const idleE = clamp(1 - (energy / idleThr), 0, 1);
+		const idleJ = clamp(1 - (jerk / (idleThr * 2.0)), 0, 1);
+		let idleConf = clamp(0.6 * idleE + 0.4 * idleJ, 0, 1);
+
+		// If rotating strongly, reduce idle confidence
+		const rotPenalty = clamp(rot / 120, 0, 1);
+		idleConf = clamp(idleConf * (1 - 0.5 * rotPenalty), 0, 1);
+
+		return { idleConf, energy, jerk, smooth, period, periodHz, beat, axis, rot, driftX, driftY };
+	}
+
+	// ---------- Drawing ----------
+	function drawScope() {
+		const ctx = el.ctx;
+		const w = el.scope.width;
+		const h = el.scope.height;
+
+		ctx.clearRect(0, 0, w, h);
+
+		// Grid
+		ctx.strokeStyle = "rgba(255,255,255,0.08)";
+		ctx.lineWidth = 1;
+		for (let i = 0; i <= 10; i++) {
+			const y = (h * i) / 10;
+			ctx.beginPath();
+			ctx.moveTo(0, y);
+			ctx.lineTo(w, y);
+			ctx.stroke();
+		}
+		for (let i = 0; i <= 12; i++) {
+			const x = (w * i) / 12;
+			ctx.beginPath();
+			ctx.moveTo(x, 0);
+			ctx.lineTo(x, h);
+			ctx.stroke();
+		}
+
+		// Helpers
+		function plot(arr, yMin, yMax, lineWidth, strokeStyle) {
+			ctx.strokeStyle = strokeStyle;
+			ctx.lineWidth = lineWidth;
+			ctx.beginPath();
+			const n = arr.length;
+			for (let j = 0; j < n; j++) {
+				const i = (scope.i + j) % n;
+				const x = (j / (n - 1)) * w;
+				const v = arr[i];
+				const t = (v - yMin) / (yMax - yMin);
+				const y = h - clamp(t, 0, 1) * h;
+				if (j === 0) ctx.moveTo(x, y);
+				else ctx.lineTo(x, y);
+			}
+			ctx.stroke();
+		}
+
+		// We avoid “setting specific colors” in charts usually, but here it’s not a matplotlib chart;
+		// it’s a UI visualization. Use simple rgba strokes.
+		plot(scope.linMag, 0, 5, 2, "rgba(122,162,255,0.95)");
+		plot(scope.energy, 0, 3, 2, "rgba(61,220,151,0.90)");
+		plot(scope.period, 0, 1, 2, "rgba(255,200,87,0.90)");
+		plot(scope.beat, 0, 1, 2, "rgba(255,92,119,0.90)");
+
+		// Labels
+		ctx.fillStyle = "rgba(232,236,255,0.92)";
+		ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+		ctx.fillText("lin |a|", 10, 18);
+		ctx.fillText("energy", 10, 34);
+		ctx.fillText("period", 10, 50);
+		ctx.fillText("beat", 10, 66);
+	}
+
+	// ---------- Update UI ----------
+	function setBar(elBar, v01) {
+		const v = clamp(v01, 0, 1);
+		elBar.style.width = (v * 100).toFixed(1) + "%";
+	}
+
+	function updateUI(f) {
+		el.idleConf.textContent = fmt(f.idleConf, 2);
+		el.energy.textContent = fmt(f.energy, 2);
+		el.jerk.textContent = fmt(f.jerk, 2);
+		el.smooth.textContent = fmt(f.smooth, 2);
+		el.period.textContent = fmt(f.period, 2);
+		el.periodHz.textContent = f.periodHz ? `(${f.periodHz.toFixed(2)} Hz)` : "";
+		el.beat.textContent = fmt(f.beat, 2);
+		el.axis.textContent = f.axis;
+		el.rot.textContent = fmt(f.rot, 1);
+		el.drift.textContent = `${fmt(f.driftX, 2)}, ${fmt(f.driftY, 2)}`;
+
+		const energyScale = parseFloat(el.energyScale.value);
+		setBar(el.barEnergy, clamp(f.energy / energyScale, 0, 1));
+		setBar(el.barIdle, f.idleConf);
+		setBar(el.barBeat, f.beat);
+
+		drawScope();
+	}
+
+	// ---------- Sensor handlers ----------
+	let lastLin = { x: 0, y: 0, z: 0 };
+	let lastSampleTime = 0;
+
+	function handleMotion(e) {
+		if (!running) return;
+		hasMotion = true;
+
+		const t = nowMs();
+		if (!lastT) lastT = t;
+		const dt = Math.max(1e-3, (t - lastT) / 1000);
+		lastT = t;
+
+		// Update sampling rate estimate
+		const hz = 1 / dt;
+		hzEMA = hzEMA ? lerp(hzEMA, hz, 0.08) : hz;
+		el.rate.textContent = `~${hzEMA.toFixed(1)} Hz`;
+
+		// Read accel
+		// Prefer true linear accel if provided, else derive from includingGravity with LPF gravity estimate
+		let ax = 0, ay = 0, az = 0;
+		let lax = 0, lay = 0, laz = 0;
+		let gx = 0, gy = 0, gz = 0;
+
+		if (e.accelerationIncludingGravity) {
+			ax = e.accelerationIncludingGravity.x ?? 0;
+			ay = e.accelerationIncludingGravity.y ?? 0;
+			az = e.accelerationIncludingGravity.z ?? 0;
+		}
+		if (e.acceleration) {
+			lax = e.acceleration.x ?? 0;
+			lay = e.acceleration.y ?? 0;
+			laz = e.acceleration.z ?? 0;
+		} else {
+			// Derive line
