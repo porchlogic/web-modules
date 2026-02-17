@@ -8,7 +8,7 @@
 Browser-based motion visualization pages that process `DeviceMotionEvent` data into derived vectors and render them on a full-screen canvas with an on-page controls panel.
 
 #### inputs
-Device accelerometer data (`accelerationIncludingGravity`), runtime permission grant on iOS, and user control values (thresholds, filters, gain, and scale).
+Device accelerometer data (`accelerationIncludingGravity`), runtime permission grant on iOS, and user control values (thresholds, filters, gain, scale, and zoom).
 
 #### outputs
 Real-time canvas visualization (arrow/dot), numeric readouts, and UI state updates including manual `v1` reset behavior in `motion12.html`.

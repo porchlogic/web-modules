@@ -170,6 +170,15 @@
 							<input id="scale" type="range" min="10" max="260" step="1" value="90">
 							<div class="small">Pixels per (m/s) for arrow (r1) and dot (v1).</div>
 						</div>
+
+						<div class="ctrl">
+							<label>
+								<span>Zoom out</span>
+								<span class="val" id="zoomv"></span>
+							</label>
+							<input id="zoom" type="range" min="1.0" max="12.0" step="0.1" value="5.0">
+							<div class="small">Higher value zooms out more (effective scale = screen scale / zoom).</div>
+						</div>
 					</div>
 				</div>
 
@@ -207,6 +216,7 @@
 		ga: el('ga'), gav: el('gav'),
 		gain: el('gain'), gainv: el('gainv'),
 		scale: el('scale'), scalev: el('scalev'),
+		zoom: el('zoom'), zoomv: el('zoomv'),
 		readout: el('readout'),
 	};
 
@@ -217,6 +227,7 @@
 		gravAlpha: parseFloat(ui.ga.value),
 		gain: parseFloat(ui.gain.value),
 		scale: parseFloat(ui.scale.value),
+		zoom: parseFloat(ui.zoom.value),
 	};
 
 	function bindRange(input, onChange) {
@@ -231,6 +242,7 @@
 	bindRange(ui.ga, (v) => { params.gravAlpha = v; ui.gav.textContent = v.toFixed(2); });
 	bindRange(ui.gain, (v) => { params.gain = v; ui.gainv.textContent = v.toFixed(2); });
 	bindRange(ui.scale, (v) => { params.scale = v; ui.scalev.textContent = `${Math.round(v)} px`; });
+	bindRange(ui.zoom, (v) => { params.zoom = v; ui.zoomv.textContent = `${v.toFixed(1)}x`; });
 
 	// ---------- Motion logic ----------
 	let running = false;
@@ -401,7 +413,7 @@
 
 		drawCrosshair(cx, cy, vizH);
 
-		const s = params.scale;
+		const s = params.scale / params.zoom;
 
 		const r1x = (r1.x) * s;
 		const r1y = (-r1.y) * s;
@@ -420,6 +432,7 @@
 			`<div>r1XY: <b>${r1.x.toFixed(3)}, ${r1.y.toFixed(3)}</b></div>` +
 			`<div>v1XY: <b>${v1.x.toFixed(3)}, ${v1.y.toFixed(3)}</b></div>` +
 			`<div>window: <b>${Math.round(params.winMs)}ms</b></div>` +
+			`<div>zoom: <b>${params.zoom.toFixed(1)}x</b></div>` +
 			`<div>state: <b>${(r1Mag >= params.t1) ? 'accumulating' : 'holding'}</b></div>`;
 
 		requestAnimationFrame(loop);
