@@ -22,14 +22,14 @@
 		/* Bottom drawer */
 		#drawer{
 			position:fixed;
-			left:0; right:0; bottom:0;
+			left:0; right:0; top:50%; bottom:0;
 			z-index:10;
-			pointer-events:none; /* only children that opt-in receive events */
+			pointer-events:auto;
 		}
 		#drawer .sheet{
-			pointer-events:auto;
-			max-width:760px;
-			margin:0 auto;
+			height:100%;
+			max-width:none;
+			margin:0;
 			border:1px solid rgba(255,255,255,0.10);
 			border-bottom:0;
 			border-radius:16px 16px 0 0;
@@ -37,29 +37,15 @@
 			backdrop-filter: blur(10px);
 			box-shadow: 0 -18px 40px rgba(0,0,0,0.45);
 			overflow:hidden;
-			transform: translateY(var(--sheet-offset, 0px));
-			transition: transform 220ms ease;
-		}
-		#drawer.collapsed .sheet{
-			transform: translateY(calc(100% - var(--peek, 64px)));
 		}
 		#drawer .grabbar{
 			display:flex;
 			align-items:center;
-			justify-content:space-between;
+			justify-content:flex-start;
 			gap:10px;
 			padding:10px 12px;
 			background:linear-gradient(to bottom, var(--panel2), transparent);
 			border-bottom:1px solid rgba(255,255,255,0.08);
-			user-select:none;
-			touch-action: pan-y;
-		}
-		#drawer .handle{
-			width:52px; height:5px;
-			border-radius:999px;
-			background:rgba(255,255,255,0.22);
-			margin:0 auto;
-			flex: 0 0 auto;
 		}
 		#drawer .title{
 			font-weight:700;
@@ -115,20 +101,17 @@
 <body>
 	<canvas id="c"></canvas>
 
-	<div id="drawer" class="collapsed">
+	<div id="drawer">
 		<div class="sheet" id="sheet">
 			<div class="grabbar" id="grab">
-				<div class="title" id="drawerTitle">Controls</div>
-				<div class="handle" aria-hidden="true"></div>
-				<div class="row" style="gap:8px;">
-					<span class="badge" id="status">idle</span>
-					<button id="toggle" style="padding:8px 10px;">Open</button>
-				</div>
+				<div class="title">Controls</div>
+				<span class="badge" id="status">idle</span>
 			</div>
 
 			<div class="controls" id="controls">
 				<div class="row">
 					<button id="btn">Enable Motion</button>
+					<button id="resetV1">Reset v1</button>
 					<span class="badge">Assume: phone flat, face up, top edge forward</span>
 				</div>
 
@@ -212,15 +195,11 @@
 
 	// ---------- UI ----------
 	const el = (id) => document.getElementById(id);
-	const drawer = el('drawer');
-	const sheet = el('sheet');
-	const grab = el('grab');
-	const toggle = el('toggle');
 	const statusEl = el('status');
-	const titleEl = el('drawerTitle');
 
 	const ui = {
 		btn: el('btn'),
+		resetV1: el('resetV1'),
 		status: statusEl,
 		t1: el('t1'), t1v: el('t1v'),
 		t2: el('t2'), t2v: el('t2v'),
@@ -253,88 +232,6 @@
 	bindRange(ui.gain, (v) => { params.gain = v; ui.gainv.textContent = v.toFixed(2); });
 	bindRange(ui.scale, (v) => { params.scale = v; ui.scalev.textContent = `${Math.round(v)} px`; });
 
-	// Drawer open/close
-	let isOpen = false;
-	function setOpen(open) {
-		isOpen = !!open;
-		drawer.classList.toggle('collapsed', !isOpen);
-		toggle.textContent = isOpen ? 'Close' : 'Open';
-		titleEl.textContent = isOpen ? 'Controls' : 'Controls (collapsed)';
-		updatePeek();
-	}
-	function updatePeek() {
-		// Peek height includes grabbar plus a little safe-area space
-		const grabH = grab.getBoundingClientRect().height || 56;
-		const safe = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('env(safe-area-inset-bottom)')) || 0;
-		drawer.style.setProperty('--peek', `${Math.max(56, grabH + 8 + safe)}px`);
-	}
-	window.addEventListener('resize', updatePeek, { passive: true });
-
-	toggle.addEventListener('click', () => setOpen(!isOpen), { passive: true });
-
-	// Drag to open/close
-	let dragging = false;
-	let startY = 0;
-	let startOpen = false;
-
-	function onDown(ev) {
-		dragging = true;
-		startOpen = isOpen;
-		startY = (ev.touches ? ev.touches[0].clientY : ev.clientY);
-		sheet.style.transition = 'none';
-	}
-	function onMove(ev) {
-		if (!dragging) return;
-		const y = (ev.touches ? ev.touches[0].clientY : ev.clientY);
-		const dy = y - startY;
-
-		// If open: dragging down increases offset (pushes sheet down).
-		// If closed: dragging up decreases offset (pulls sheet up; offset negative not needed, clamp to 0).
-		let offset = 0;
-		if (startOpen) offset = Math.max(0, dy);
-		else offset = Math.max(0, -dy) ? Math.max(0, (grab.getBoundingClientRect().height * 6) - (Math.max(0, -dy))) : 0;
-
-		// Simpler: map dy into a small temporary translation when dragging.
-		// We'll just translate by dy when open, and by (-dy) when closed (clamped).
-		if (startOpen) drawer.style.setProperty('--sheet-offset', `${Math.max(0, dy)}px`);
-		else drawer.style.setProperty('--sheet-offset', `${Math.max(0, -dy) * -1}px`);
-
-		ev.preventDefault?.();
-	}
-	function onUp(ev) {
-		if (!dragging) return;
-		const y = (ev.changedTouches ? ev.changedTouches[0].clientY : ev.clientY);
-		const dy = y - startY;
-		dragging = false;
-		sheet.style.transition = '';
-
-		// Decide open/close based on dy
-		const threshold = 40;
-		if (startOpen) {
-			// drag down closes
-			if (dy > threshold) setOpen(false);
-			else setOpen(true);
-		} else {
-			// drag up opens
-			if (dy < -threshold) setOpen(true);
-			else setOpen(false);
-		}
-
-		drawer.style.setProperty('--sheet-offset', `0px`);
-	}
-
-	grab.addEventListener('mousedown', onDown);
-	window.addEventListener('mousemove', onMove, { passive:false });
-	window.addEventListener('mouseup', onUp);
-
-	grab.addEventListener('touchstart', onDown, { passive:true });
-	window.addEventListener('touchmove', onMove, { passive:false });
-	window.addEventListener('touchend', onUp, { passive:true });
-
-	// Initial drawer state
-	updatePeek();
-	setOpen(false);
-
 	// ---------- Motion logic ----------
 	let running = false;
 
@@ -350,6 +247,11 @@
 	let r1 = { x: 0, y: 0, z: 0 };
 	let r1Mag = 0;
 	let v1Mag = 0;
+
+	function resetV1State() {
+		v1.x = 0; v1.y = 0; v1.z = 0;
+		v1Mag = 0;
+	}
 
 	function mag3(a){ return Math.hypot(a.x, a.y, a.z); }
 
@@ -405,8 +307,7 @@
 		v1Mag = mag3(v1);
 
 		if (v1Mag < params.t2 && r1Mag < params.t1) {
-			v1.x = 0; v1.y = 0; v1.z = 0;
-			v1Mag = 0;
+			resetV1State();
 		}
 	}
 
@@ -431,9 +332,10 @@
 			console.warn(err);
 		}
 	});
+	ui.resetV1.addEventListener('click', resetV1State, { passive: true });
 
 	// ---------- Drawing ----------
-	function drawCrosshair(cx, cy) {
+	function drawCrosshair(cx, cy, vizH) {
 		ctx.lineWidth = 1;
 		ctx.strokeStyle = 'rgba(255,255,255,0.12)';
 		ctx.beginPath();
@@ -444,7 +346,8 @@
 		ctx.strokeStyle = 'rgba(255,255,255,0.06)';
 		ctx.beginPath();
 		ctx.moveTo(0, cy); ctx.lineTo(window.innerWidth, cy);
-		ctx.moveTo(cx, 0); ctx.lineTo(cx, window.innerHeight);
+		ctx.moveTo(cx, 0); ctx.lineTo(cx, vizH);
+		ctx.moveTo(0, vizH); ctx.lineTo(window.innerWidth, vizH);
 		ctx.stroke();
 	}
 
@@ -493,9 +396,10 @@
 		ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
 		const cx = window.innerWidth / 2;
-		const cy = window.innerHeight / 2;
+		const vizH = window.innerHeight / 2;
+		const cy = vizH / 2;
 
-		drawCrosshair(cx, cy);
+		drawCrosshair(cx, cy, vizH);
 
 		const s = params.scale;
 
@@ -506,7 +410,9 @@
 		const v1y = (-v1.y) * s;
 
 		drawArrow(cx, cy, r1x, r1y);
-		drawDot(cx + v1x, cy + v1y);
+		const dotX = Math.max(10, Math.min(window.innerWidth - 10, cx + v1x));
+		const dotY = Math.max(10, Math.min(vizH - 10, cy + v1y));
+		drawDot(dotX, dotY);
 
 		ui.readout.innerHTML =
 			`<div>r1Mag: <b>${r1Mag.toFixed(3)}</b></div>` +
