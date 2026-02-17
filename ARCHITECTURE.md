@@ -11,7 +11,7 @@ Browser-based motion visualization pages that process `DeviceMotionEvent` data i
 Device accelerometer data (`accelerationIncludingGravity`), runtime permission grant on iOS, and user control values (thresholds, filters, gain, scale, and zoom).
 
 #### outputs
-Real-time canvas visualization (arrow/dot), numeric readouts, and UI state updates including manual `v1` reset behavior in `motion12.html`.
+Real-time canvas visualization (raw-accel arrow plus `v1` dot), numeric readouts, and UI state updates including manual `v1` reset behavior in `motion12.html`.
 
 ### m8-drone-control
 

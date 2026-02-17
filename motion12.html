@@ -27,6 +27,8 @@
 			pointer-events:auto;
 		}
 		#drawer .sheet{
+			display:flex;
+			flex-direction:column;
 			height:100%;
 			max-width:none;
 			margin:0;
@@ -56,6 +58,9 @@
 		}
 		#drawer .controls{
 			padding:12px;
+			flex:1 1 auto;
+			overflow-y:auto;
+			-webkit-overflow-scrolling: touch;
 		}
 		.row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
 		.row + .row{margin-top:10px;}
@@ -168,7 +173,7 @@
 								<span class="val" id="scalev"></span>
 							</label>
 							<input id="scale" type="range" min="10" max="260" step="1" value="90">
-							<div class="small">Pixels per (m/s) for arrow (r1) and dot (v1).</div>
+							<div class="small">Pixels per unit for arrow (raw accel) and dot (v1).</div>
 						</div>
 
 						<div class="ctrl">
@@ -257,6 +262,7 @@
 	let v1 = { x: 0, y: 0, z: 0 };
 
 	let r1 = { x: 0, y: 0, z: 0 };
+	let rawA = { x: 0, y: 0, z: 0 };
 	let r1Mag = 0;
 	let v1Mag = 0;
 
@@ -292,6 +298,7 @@
 		const ax = aInc.x ?? 0;
 		const ay = aInc.y ?? 0;
 		const az = aInc.z ?? 0;
+		rawA.x = ax; rawA.y = ay; rawA.z = az;
 
 		if (!gInit) {
 			g.x = ax; g.y = ay; g.z = az;
@@ -415,13 +422,13 @@
 
 		const s = params.scale / params.zoom;
 
-		const r1x = (r1.x) * s;
-		const r1y = (-r1.y) * s;
+		const rawAx = rawA.x * s;
+		const rawAy = (-rawA.y) * s;
 
 		const v1x = (v1.x) * s;
 		const v1y = (-v1.y) * s;
 
-		drawArrow(cx, cy, r1x, r1y);
+		drawArrow(cx, cy, rawAx, rawAy);
 		const dotX = Math.max(10, Math.min(window.innerWidth - 10, cx + v1x));
 		const dotY = Math.max(10, Math.min(vizH - 10, cy + v1y));
 		drawDot(dotX, dotY);
@@ -429,6 +436,7 @@
 		ui.readout.innerHTML =
 			`<div>r1Mag: <b>${r1Mag.toFixed(3)}</b></div>` +
 			`<div>v1Mag: <b>${v1Mag.toFixed(3)}</b></div>` +
+			`<div>aXY: <b>${rawA.x.toFixed(3)}, ${rawA.y.toFixed(3)}</b></div>` +
 			`<div>r1XY: <b>${r1.x.toFixed(3)}, ${r1.y.toFixed(3)}</b></div>` +
 			`<div>v1XY: <b>${v1.x.toFixed(3)}, ${v1.y.toFixed(3)}</b></div>` +
 			`<div>window: <b>${Math.round(params.winMs)}ms</b></div>` +
